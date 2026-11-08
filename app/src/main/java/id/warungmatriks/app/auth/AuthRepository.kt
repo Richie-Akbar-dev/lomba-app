@@ -21,7 +21,7 @@ data class SignedInAccount(val uid: String, val displayName: String, val email: 
 
 /** Firebase owns and persists the auth session; the app never stores Google tokens itself. */
 class AuthRepository(private val context: Context) {
-    private val preferences = context.getSharedPreferences("shop_profiles", Context.MODE_PRIVATE)
+    private val profiles = LocalShopProfiles(context)
     val isConfigured: Boolean = listOf(
         BuildConfig.FIREBASE_API_KEY, BuildConfig.FIREBASE_APP_ID,
         BuildConfig.FIREBASE_PROJECT_ID, BuildConfig.GOOGLE_WEB_CLIENT_ID,
@@ -41,24 +41,13 @@ class AuthRepository(private val context: Context) {
     // Firebase restores its cached user without a network request; this is not an online revocation check.
     fun currentUser(): FirebaseUser? = if (isConfigured) auth().currentUser else null
 
-    fun profile(user: FirebaseUser): ShopProfile? {
-        val prefix = "${user.uid}."
-        val owner = preferences.getString(prefix + "owner", null) ?: return null
-        val shop = preferences.getString(prefix + "shop", null) ?: return null
-        val type = preferences.getString(prefix + "type", null) ?: return null
-        if (owner.isBlank() || shop.isBlank() || type.isBlank()) return null
-        return ShopProfile(owner, shop, type)
-    }
+    fun profile(user: FirebaseUser): ShopProfile? = profiles.get(user.uid)
 
     fun account(user: FirebaseUser, profile: ShopProfile) = SignedInAccount(
         uid = user.uid, displayName = user.displayName.orEmpty(), email = user.email.orEmpty(), shop = profile,
     )
 
-    fun saveProfile(user: FirebaseUser, profile: ShopProfile): Boolean {
-        val prefix = "${user.uid}."
-        return preferences.edit().putString(prefix + "owner", profile.ownerName)
-            .putString(prefix + "shop", profile.shopName).putString(prefix + "type", profile.businessType).commit()
-    }
+    fun saveProfile(user: FirebaseUser, profile: ShopProfile): Boolean = profiles.save(user.uid, profile)
 
     suspend fun signIn(activityContext: Context): FirebaseUser {
         check(isConfigured) { "Google Sign-In belum dikonfigurasi." }

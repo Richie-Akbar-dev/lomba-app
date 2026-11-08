@@ -25,7 +25,7 @@ internal enum class Screen(val title: String, val icon: ImageVector? = null) {
 }
 
 @Composable
-internal fun WarungMatriksApp(account: SignedInAccount, onSignOut: () -> Unit, signOutBusy: Boolean = false, signOutError: String? = null) {
+internal fun WarungMatriksApp(account: SignedInAccount, onSignOut: () -> Unit, signOutBusy: Boolean = false, signOutError: String? = null, onSaveProfile: (ShopProfile) -> Boolean = { false }) {
     val mainScreens = listOf(Screen.KASIR, Screen.PESANAN, Screen.BARANG, Screen.LAPORAN, Screen.AKUN)
     var screen by rememberSaveable(account.uid) { mutableStateOf(Screen.KASIR) }
     val backStack = rememberSaveable(account.uid, saver = listSaver<SnapshotStateList<Screen>, String>(
@@ -56,7 +56,7 @@ internal fun WarungMatriksApp(account: SignedInAccount, onSignOut: () -> Unit, s
                 Screen.PESANAN -> OrdersScreen(ownerId = account.uid)
                 Screen.BARANG -> InventoryScreen(ownerId = account.uid, onAdd = { editingProductId = null; navigate(Screen.TAMBAH) }, onEdit = { editingProductId = it; navigate(Screen.TAMBAH) })
                 Screen.LAPORAN -> ReportsScreen(ownerId = account.uid, shopName = account.shop.shopName)
-                Screen.AKUN -> AccountScreen(account = account, onSignOut = onSignOut, signOutBusy = signOutBusy, signOutError = signOutError, onNotifications = { navigate(Screen.NOTIFIKASI) })
+                Screen.AKUN -> AccountScreen(account = account, onSignOut = onSignOut, signOutBusy = signOutBusy, signOutError = signOutError, onNotifications = { navigate(Screen.NOTIFIKASI) }, onSaveProfile = onSaveProfile)
                 Screen.NOTIFIKASI -> NotificationsScreen(ownerId = account.uid, onBack = { back() }, onCredit = { navigate(Screen.KASBON) })
                 Screen.KAS -> CashLedgerScreen(ownerId = account.uid, onBack = { back() })
                 Screen.KASBON -> CreditScreen(ownerId = account.uid, pending = pendingCredit, onBack = { back() }, onSaved = { result ->

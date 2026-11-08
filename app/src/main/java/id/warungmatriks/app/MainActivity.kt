@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import id.warungmatriks.app.ui.AuthEntry
 import id.warungmatriks.app.data.scheduleHistoryCleanup
 import id.warungmatriks.app.data.scheduleCreditReminders
+import id.warungmatriks.app.data.scheduleStockReminders
 import id.warungmatriks.app.ui.theme.WarungMatriksTheme
 
 class MainActivity : ComponentActivity() {
@@ -13,6 +14,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         scheduleHistoryCleanup(applicationContext)
         scheduleCreditReminders(applicationContext)
+        scheduleStockReminders(applicationContext)
         setContent { WarungMatriksTheme { AuthEntry() } }
     }
 }

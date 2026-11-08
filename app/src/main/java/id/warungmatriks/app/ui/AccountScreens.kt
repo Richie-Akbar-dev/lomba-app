@@ -17,9 +17,10 @@ import id.warungmatriks.app.auth.ShopProfile
 import id.warungmatriks.app.auth.SignedInAccount
 
 @Composable
-internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, signOutBusy: Boolean, signOutError: String?, onNotifications: () -> Unit) {
+internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, signOutBusy: Boolean, signOutError: String?, onNotifications: () -> Unit, onSaveProfile: (ShopProfile) -> Boolean = { false }) {
     var info by remember { mutableStateOf<String?>(null) }
     var binary by remember { mutableStateOf(false) }
+    var editingProfile by remember { mutableStateOf(false) }
     var confirmSignOut by remember { mutableStateOf(false) }
     DemoPage("Akun & Pengaturan", "Profil tersimpan di perangkat") {
         DemoCard {
@@ -31,7 +32,7 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
         }
         SectionGap(); GroupTitle("Manajemen toko & kasir")
         DemoCard {
-            MenuRow(Icons.Default.Storefront, "Profil toko", "Identitas & pengaturan warung") { info = "Pengaturan profil belum tersedia." }
+            MenuRow(Icons.Default.Storefront, "Profil toko", "Ubah nama pemilik, nama warung & jenis usaha") { editingProfile = true }
             HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Line)
             MenuRow(Icons.Default.QrCode, "Metode pembayaran", "QRIS, transfer & tunai") { binary = true }
             HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Line)
@@ -53,7 +54,12 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
         signOutError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
         Spacer(Modifier.height(16.dp)); DemoNote("Profil, kasir, dan kas disimpan di perangkat sebagai prototipe. Beberapa fitur keuangan masih dalam tahap pengembangan.")
     }
-    info?.let { text -> DemoDialog("Informasi demo", text) { info = null } }
+    info?.let { text -> DemoDialog("Informasi", text) { info = null } }
+    if (editingProfile) EditShopProfileDialog(profile = account.shop, onClose = { editingProfile = false }, onSave = { profile ->
+        val saved = onSaveProfile(profile)
+        if (saved) { editingProfile = false; info = "Profil toko berhasil disimpan di perangkat." }
+        saved
+    })
     if (binary) BinaryDialog(onClose = { binary = false })
     if (confirmSignOut) AlertDialog(
         onDismissRequest = { confirmSignOut = false }, title = { Text("Keluar akun?") },
@@ -61,6 +67,31 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
         confirmButton = { TextButton(onClick = { confirmSignOut = false; onSignOut() }) { Text("Keluar") } },
         dismissButton = { TextButton(onClick = { confirmSignOut = false }) { Text("Batal") } },
     )
+}
+
+@Composable
+private fun EditShopProfileDialog(profile: ShopProfile, onClose: () -> Unit, onSave: (ShopProfile) -> Boolean) {
+    var owner by remember(profile) { mutableStateOf(profile.ownerName) }
+    var shop by remember(profile) { mutableStateOf(profile.shopName) }
+    var kind by remember(profile) { mutableStateOf(profile.businessType) }
+    var saveError by remember(profile) { mutableStateOf(false) }
+    AlertDialog(onDismissRequest = onClose, title = { Text("Edit profil toko") }, text = {
+        Column {
+            OutlinedTextField(owner, { owner = it.take(80) }, label = { Text("Nama pemilik") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(shop, { shop = it.take(80) }, label = { Text("Nama warung") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Spacer(Modifier.height(8.dp))
+            Text("Jenis usaha", fontSize = 12.sp, color = Muted)
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                listOf("Warung", "Minuman", "Lainnya").forEach { value ->
+                    FilterChip(selected = kind == value, onClick = { kind = value }, label = { Text(value, fontSize = 11.sp) })
+                }
+            }
+            DemoNote("Perubahan hanya disimpan di perangkat untuk akun ini; tidak mengubah akun Google.")
+            if (saveError) Text("Profil belum dapat disimpan. Coba lagi.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+        }
+    }, confirmButton = { TextButton(enabled = owner.isNotBlank() && shop.isNotBlank() && kind.isNotBlank(), onClick = { saveError = !onSave(ShopProfile(owner.trim(), shop.trim(), kind)) }) { Text("Simpan") } },
+        dismissButton = { TextButton(onClick = onClose) { Text("Batal") } })
 }
 
 @Composable

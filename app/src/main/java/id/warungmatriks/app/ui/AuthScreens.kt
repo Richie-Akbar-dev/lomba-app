@@ -107,7 +107,15 @@ fun AuthEntry() {
                     catch (e: CancellationException) { throw e } catch (_: Exception) { message = "Tidak dapat keluar. Coba lagi." } finally { busy = false }
                 }
             }
-        }, signOutBusy = busy, signOutError = message)
+        }, signOutBusy = busy, signOutError = message, onSaveProfile = { profile ->
+            try {
+                val user = repository.currentUser()
+                if (user == null || user.uid != current.account.uid || profile.ownerName.isBlank() || profile.shopName.isBlank() || profile.businessType.isBlank()) false
+                else if (repository.saveProfile(user, profile)) {
+                    state = EntryState.Ready(current.account.copy(shop = profile)); true
+                } else false
+            } catch (_: Exception) { false }
+        })
     }
 }
 
