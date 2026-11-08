@@ -142,24 +142,93 @@ class CashierStoreTest {
             owner.checkout("owner-a", listOf(CashierLine(product, 1)), 10000, "")
             owner.checkout("owner-b", listOf(CashierLine(product, 1)), 0, "Bu RT")
             other.checkout("other-a", listOf(CashierLine(product, 1)), 5000, "")
-            owner.writableDatabase.execSQL("UPDATE sales SET created_at=1000")
+            val timestamp = System.currentTimeMillis()
+            owner.writableDatabase.execSQL("UPDATE sales SET created_at=?", arrayOf(timestamp))
             owner.updateProduct(product.copy(name = "Sabun baru", price = 6000, cost = 4000))
             owner.setProductActive(product.id, false)
 
-            val first = owner.saleHistory(1000, 1001, SaleHistoryFilter.ALL, limit = 1)
+            val first = owner.saleHistory(timestamp, timestamp + 1, SaleHistoryFilter.ALL, limit = 1)
             assertEquals(listOf("owner-b"), first.sales.map { it.id })
             assertTrue(first.next != null)
-            val second = owner.saleHistory(1000, 1001, SaleHistoryFilter.ALL, first.next, 1)
+            val second = owner.saleHistory(timestamp, timestamp + 1, SaleHistoryFilter.ALL, first.next, 1)
             assertEquals(listOf("owner-a"), second.sales.map { it.id })
             assertNull(second.next)
             assertEquals(listOf("owner-a"), owner.saleHistory(null, null, SaleHistoryFilter.PAID_AT_SALE).sales.map { it.id })
             assertEquals(listOf("owner-b"), owner.saleHistory(null, null, SaleHistoryFilter.CREDIT_AT_SALE).sales.map { it.id })
-            assertTrue(owner.saleHistory(1001, 2000, SaleHistoryFilter.ALL).sales.isEmpty())
-            assertEquals(SaleHistorySummary(2, 10000, 5000, 5000), owner.saleHistorySummary(1000, 1001))
+            assertTrue(owner.saleHistory(timestamp + 1, timestamp + 1000, SaleHistoryFilter.ALL).sales.isEmpty())
+            assertEquals(SaleHistorySummary(2, 10000, 5000, 5000), owner.saleHistorySummary(timestamp, timestamp + 1))
             assertEquals(5000, owner.saleHistory(null, null, SaleHistoryFilter.PAID_AT_SALE).sales.single().cashApplied)
             assertEquals(SaleItemSnapshot("Sabun lama", 1, 5000, 3000), owner.saleItemSnapshots("owner-a").single())
             assertTrue(other.saleItemSnapshots("owner-a").isEmpty())
             assertEquals(listOf("other-a"), other.saleHistory(null, null, SaleHistoryFilter.ALL).sales.map { it.id })
+        } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun qrisRecordsSaleOnceWithoutCashOrDebt() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "qris-sale-" + UUID.randomUUID() + ".db"
+        val store = CashierStore(context, "owner", dbName)
+        try {
+            val product = Product("qris-item", "Sabun", 5000, 3000, 4)
+            store.saveProduct(product)
+            val result = store.checkoutQris("qris-id", listOf(CashierLine(product, 2)))
+            assertEquals(10000, result.total); assertEquals(0, result.debt); assertEquals(0, result.received)
+            store.checkoutQris("qris-id", listOf(CashierLine(product, 2)))
+            assertEquals(2, store.stocks().getValue(product.id))
+            assertTrue(store.receivables().isEmpty())
+            val record = store.saleHistory(null, null, SaleHistoryFilter.QRIS).sales.single()
+            assertEquals("qris", record.paymentMethod)
+            assertEquals(0, record.cashApplied)
+            assertTrue(store.saleHistory(null, null, SaleHistoryFilter.PAID_AT_SALE).sales.isEmpty())
+            try {
+                store.checkoutQris("qris-too-many", listOf(CashierLine(product, 3)))
+                fail("QRIS checkout must reject insufficient stock")
+            } catch (_: InsufficientStockException) { }
+            assertEquals(2, store.stocks().getValue(product.id))
+            assertEquals(1, store.saleHistory(null, null, SaleHistoryFilter.QRIS).sales.size)
+            val now = System.currentTimeMillis()
+            val summary = store.saleHistorySummary(now - 60000, now + 60000)
+            assertEquals(10000L, summary.total); assertEquals(10000L, summary.qrisTotal)
+            assertEquals(0L, summary.cashApplied); assertEquals(0L, summary.initialDebt)
+            store.readableDatabase.rawQuery("SELECT COUNT(*) FROM cash_movements WHERE sale_id='qris-id'", null).use {
+                assertTrue(it.moveToFirst()); assertEquals(0, it.getInt(0))
+            }
+        } finally { store.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun retentionDeletesExpiredSalesButKeepsUnpaidDebtAndCashLedger() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "retention-" + UUID.randomUUID() + ".db"
+        val owner = CashierStore(context, "owner", dbName)
+        val other = CashierStore(context, "other", dbName)
+        try {
+            val product = Product("item", "Sabun", 5000, 3000, 10)
+            owner.saveProduct(product); other.saveProduct(product)
+            owner.checkout("old-cash", listOf(CashierLine(product, 1)), 5000, "")
+            owner.checkout("young-cash", listOf(CashierLine(product, 1)), 5000, "")
+            owner.checkout("old-debt", listOf(CashierLine(product, 1)), 1000, "Bu RT")
+            other.checkout("other-old", listOf(CashierLine(product, 1)), 5000, "")
+            val now = System.currentTimeMillis()
+            val cutoff = now - HistoryRetention.RETENTION_MS
+            owner.writableDatabase.execSQL("UPDATE sales SET created_at=? WHERE id IN ('old-cash','old-debt','other-old')", arrayOf(cutoff))
+            owner.writableDatabase.execSQL("UPDATE sales SET created_at=? WHERE id='young-cash'", arrayOf(cutoff + 1))
+            HistoryRetention.clean(owner.writableDatabase, now, "owner")
+            fun count(table: String, saleId: String): Int {
+                val column = if (table == "sales") "id" else "sale_id"
+                owner.readableDatabase.rawQuery("SELECT COUNT(*) FROM $table WHERE $column=?", arrayOf(saleId)).use { it.moveToFirst(); return it.getInt(0) }
+            }
+            assertEquals(0, count("sales", "old-cash")); assertEquals(0, count("sale_items", "old-cash"))
+            assertEquals(1, count("cash_movements", "old-cash"))
+            assertEquals(1, count("sales", "young-cash")); assertEquals(1, count("sales", "other-old"))
+            assertEquals(1, count("sales", "old-debt")); assertEquals(1, count("sale_items", "old-debt"))
+            assertEquals(1, count("receivables", "old-debt"))
+            // Simulate a future settlement implementation; no settlement UI exists yet.
+            owner.writableDatabase.execSQL("UPDATE receivables SET amount_remaining=0 WHERE sale_id='old-debt'")
+            HistoryRetention.clean(owner.writableDatabase, now, "owner")
+            assertEquals(0, count("receivables", "old-debt")); assertEquals(0, count("sales", "old-debt"))
+            assertEquals(0, count("sale_items", "old-debt")); assertEquals(1, count("cash_movements", "old-debt"))
+            HistoryRetention.clean(other.writableDatabase, now)
+            assertEquals(0, count("sales", "other-old"))
         } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
     }
 

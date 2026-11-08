@@ -14,10 +14,10 @@ internal data class CheckoutResult(val total: Int, val received: Int, val change
 
 /** One per-account local catalogue, stock and prototype transaction store. */
 internal class CashierStore(context: Context, private val ownerId: String, databaseName: String = "cashier_prototype.db") :
-    SQLiteOpenHelper(context.applicationContext, databaseName, null, 2) {
+    SQLiteOpenHelper(context.applicationContext, databaseName, null, 3) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE stock (owner_id TEXT NOT NULL, product_id TEXT NOT NULL, quantity INTEGER NOT NULL CHECK(quantity >= 0), PRIMARY KEY(owner_id, product_id))")
-        db.execSQL("CREATE TABLE sales (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, created_at INTEGER NOT NULL, total INTEGER NOT NULL, received INTEGER NOT NULL, change_amount INTEGER NOT NULL, debt INTEGER NOT NULL, customer TEXT)")
+        db.execSQL("CREATE TABLE sales (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, created_at INTEGER NOT NULL, total INTEGER NOT NULL, received INTEGER NOT NULL, change_amount INTEGER NOT NULL, debt INTEGER NOT NULL, customer TEXT, payment_method TEXT NOT NULL DEFAULT 'cash')")
         createSaleItems(db)
         db.execSQL("CREATE TABLE cash_movements (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, amount INTEGER NOT NULL)")
         db.execSQL("CREATE TABLE receivables (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, customer TEXT NOT NULL, amount_remaining INTEGER NOT NULL)")
@@ -40,6 +40,7 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
             db.execSQL("INSERT INTO sale_items (sale_id, product_id, product_name, quantity, price, cost) SELECT sale_id, product_id, product_name, quantity, price, cost FROM sale_items_v1")
             db.execSQL("DROP TABLE sale_items_v1")
         }
+        if (oldVersion < 3) db.execSQL("ALTER TABLE sales ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'cash'")
     }
 
     private fun seed(db: SQLiteDatabase) {
@@ -117,14 +118,16 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         start: Long?, end: Long?, filter: SaleHistoryFilter, after: SaleCursor? = null, limit: Int = 25,
     ): SaleHistoryPage = withContext(Dispatchers.IO) {
         require(limit in 1..100)
+        HistoryRetention.clean(readableDatabase, System.currentTimeMillis(), ownerId)
         require((start == null && end == null) || (start != null && end != null && start < end))
         val conditions = mutableListOf("owner_id = ?")
         val args = mutableListOf(ownerId)
         if (start != null && end != null) { conditions += "created_at >= ? AND created_at < ?"; args += start.toString(); args += end.toString() }
         when (filter) {
             SaleHistoryFilter.ALL -> Unit
-            SaleHistoryFilter.PAID_AT_SALE -> conditions += "debt = 0"
+            SaleHistoryFilter.PAID_AT_SALE -> conditions += "debt = 0 AND payment_method = 'cash'"
             SaleHistoryFilter.CREDIT_AT_SALE -> conditions += "debt > 0"
+            SaleHistoryFilter.QRIS -> conditions += "payment_method = 'qris'"
         }
         if (after != null) {
             conditions += "(created_at < ? OR (created_at = ? AND id < ?))"
@@ -132,8 +135,8 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         }
         args += (limit + 1).toString()
         val records = mutableListOf<SaleRecord>()
-        readableDatabase.rawQuery("SELECT id,created_at,total,received,change_amount,debt,customer FROM sales WHERE ${conditions.joinToString(" AND ")} ORDER BY created_at DESC,id DESC LIMIT ?", args.toTypedArray()).use { c ->
-            while (c.moveToNext()) records += SaleRecord(c.getString(0), c.getLong(1), c.getInt(2), c.getInt(3), c.getInt(4), c.getInt(5), c.getString(6))
+        readableDatabase.rawQuery("SELECT id,created_at,total,received,change_amount,debt,customer,payment_method FROM sales WHERE ${conditions.joinToString(" AND ")} ORDER BY created_at DESC,id DESC LIMIT ?", args.toTypedArray()).use { c ->
+            while (c.moveToNext()) records += SaleRecord(c.getString(0), c.getLong(1), c.getInt(2), c.getInt(3), c.getInt(4), c.getInt(5), c.getString(6), c.getString(7))
         }
         val page = records.take(limit)
         SaleHistoryPage(page, if (records.size > limit) page.last().let { SaleCursor(it.createdAt, it.id) } else null)
@@ -141,9 +144,10 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
 
     suspend fun saleHistorySummary(start: Long, end: Long): SaleHistorySummary = withContext(Dispatchers.IO) {
         require(start < end)
-        readableDatabase.rawQuery("SELECT COUNT(*), COALESCE(SUM(total),0), COALESCE(SUM(received-change_amount),0), COALESCE(SUM(debt),0) FROM sales WHERE owner_id=? AND created_at>=? AND created_at<?", arrayOf(ownerId, start.toString(), end.toString())).use { c ->
+        HistoryRetention.clean(readableDatabase, System.currentTimeMillis(), ownerId)
+        readableDatabase.rawQuery("SELECT COUNT(*), COALESCE(SUM(total),0), COALESCE(SUM(received-change_amount),0), COALESCE(SUM(debt),0), COALESCE(SUM(CASE WHEN payment_method='qris' THEN total ELSE 0 END),0) FROM sales WHERE owner_id=? AND created_at>=? AND created_at<?", arrayOf(ownerId, start.toString(), end.toString())).use { c ->
             check(c.moveToFirst())
-            SaleHistorySummary(c.getLong(0), c.getLong(1), c.getLong(2), c.getLong(3))
+            SaleHistorySummary(c.getLong(0), c.getLong(1), c.getLong(2), c.getLong(3), c.getLong(4))
         }
     }
 
@@ -155,13 +159,21 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         items
     }
 
-    suspend fun checkout(id: String, lines: List<CashierLine>, received: Int, customer: String): CheckoutResult = withContext(Dispatchers.IO) {
+    suspend fun checkout(id: String, lines: List<CashierLine>, received: Int, customer: String): CheckoutResult =
+        recordSale(id, lines, received, customer, "cash")
+
+    // QR generation records a full-value sale, but does not verify that payment occurred.
+    suspend fun checkoutQris(id: String, lines: List<CashierLine>): CheckoutResult =
+        recordSale(id, lines, 0, "", "qris")
+
+    private suspend fun recordSale(id: String, lines: List<CashierLine>, received: Int, customer: String, method: String): CheckoutResult = withContext(Dispatchers.IO) {
+        require(method == "cash" || method == "qris")
         require(lines.isNotEmpty() && received >= 0 && lines.all { it.quantity > 0 })
         require(lines.map { it.product.id }.distinct().size == lines.size)
         val sum = lines.sumOf { it.product.price.toLong() * it.quantity }
         require(sum > 0L && sum <= Int.MAX_VALUE.toLong())
         val total = sum.toInt()
-        val settlement = calculateSettlement(total, received)
+        val settlement = if (method == "cash") calculateSettlement(total, received) else Settlement(paid = 0, change = 0, debt = 0)
         val debt = settlement.debt
         val change = settlement.change
         val name = customer.trim()
@@ -170,8 +182,9 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         db.beginTransaction()
         try {
             seed(db)
-            db.rawQuery("SELECT total, received, change_amount, debt, customer FROM sales WHERE id = ? AND owner_id = ?", arrayOf(id, ownerId)).use { cursor ->
+            db.rawQuery("SELECT total, received, change_amount, debt, customer, payment_method FROM sales WHERE id = ? AND owner_id = ?", arrayOf(id, ownerId)).use { cursor ->
                 if (cursor.moveToFirst()) {
+                    check(cursor.getString(5) == method) { "ID transaksi sudah digunakan untuk metode lain." }
                     val existing = CheckoutResult(cursor.getInt(0), cursor.getInt(1), cursor.getInt(2), cursor.getInt(3), cursor.getString(4))
                     db.setTransactionSuccessful()
                     return@withContext existing
@@ -188,7 +201,7 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
                     if (update.executeUpdateDelete() != 1) throw InsufficientStockException()
                 } finally { update.close() }
             }
-            db.execSQL("INSERT INTO sales (id, owner_id, created_at, total, received, change_amount, debt, customer) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", arrayOf(id, ownerId, System.currentTimeMillis(), total, received, change, debt, if (debt > 0) name else null))
+            db.execSQL("INSERT INTO sales (id, owner_id, created_at, total, received, change_amount, debt, customer, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", arrayOf(id, ownerId, System.currentTimeMillis(), total, received, change, debt, if (debt > 0) name else null, method))
             lines.forEach { line ->
                 db.execSQL("INSERT INTO sale_items (sale_id, product_id, product_name, quantity, price, cost) VALUES (?, ?, ?, ?, ?, ?)", arrayOf(id, line.product.id, line.product.name, line.quantity, line.product.price, line.product.cost))
             }

@@ -54,6 +54,9 @@ internal class CashierState {
     var customer by mutableStateOf("")
     var showCheckout by mutableStateOf(false)
     var showQris by mutableStateOf(false)
+    var qrisTotal by mutableIntStateOf(0)
+    var qrisLines by mutableStateOf<List<CashierLine>>(emptyList())
+    var qrisSaleId by mutableStateOf("")
     var qrisSource by mutableStateOf("")
     var processing by mutableStateOf(false)
     var receipt by mutableStateOf<CheckoutResult?>(null)
@@ -233,12 +236,17 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
                 enabled = state.ready && total > 0 && !totals.exceedsLimit && state.cashText.isNotBlank() && !state.processing,
                 modifier = Modifier.weight(1f).height(52.dp), shape = RoundedCornerShape(13.dp), contentPadding = PaddingValues(horizontal = 4.dp),
             ) { Text("Bayar tunai", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
-            OutlinedButton(onClick = { state.showQris = true }, enabled = total > 0 && !totals.exceedsLimit && !state.processing,
+            OutlinedButton(onClick = {
+                state.qrisTotal = total
+                state.qrisLines = items.map { CashierLine(it, quantities[it.id] ?: 0) }
+                state.qrisSaleId = state.checkoutId
+                state.showQris = true
+            }, enabled = state.ready && total > 0 && !totals.exceedsLimit && !state.processing,
                 modifier = Modifier.weight(1f).height(52.dp), shape = RoundedCornerShape(13.dp), contentPadding = PaddingValues(horizontal = 4.dp)) {
                 Text("Tampilkan QRIS", fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
         }
-        Text("Penjualan tunai tersimpan lokal dan tampil di Pesanan; kas dan laporan masih demo.", modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp, bottom = 16.dp), color = Muted, fontSize = 11.sp)
+        Text("Penjualan tersimpan lokal dan tampil di Pesanan; pembayaran QRIS tidak diverifikasi. Kas dan laporan masih demo.", modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp, bottom = 16.dp), color = Muted, fontSize = 11.sp)
         if (state.receivables.isNotEmpty()) {
             SectionHeading("Kasbon lokal", "${state.receivables.size} catatan")
             Spacer(Modifier.height(8.dp))
@@ -252,7 +260,20 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
         Spacer(Modifier.height(24.dp))
     }
 
-    if (state.showQris) QrisDialog(total = total, source = state.qrisSource, onSourceChange = { state.qrisSource = it }, onClose = { state.showQris = false })
+    if (state.showQris) QrisDialog(total = state.qrisTotal, source = state.qrisSource, onSourceChange = { state.qrisSource = it }, onRecord = {
+        state.processing = true
+        try {
+            store.checkoutQris(state.qrisSaleId, state.qrisLines)
+            // The QRIS sale is committed. Refresh errors cannot undo or duplicate it.
+            quantities.clear(); state.cashText = ""; state.customer = ""
+            state.checkoutId = UUID.randomUUID().toString()
+            try {
+                val freshCatalog = store.products(); val freshDebts = store.receivables()
+                state.catalog.clear(); state.catalog.addAll(freshCatalog)
+                state.receivables.clear(); state.receivables.addAll(freshDebts)
+            } catch (_: Exception) { state.ready = false; state.notice = "Penjualan QRIS tersimpan, tetapi data gagal dimuat ulang. Mulai ulang aplikasi." }
+        } finally { state.processing = false }
+    }, onClose = { state.showQris = false })
     if (state.showCheckout) {
         AlertDialog(
             onDismissRequest = { if (!state.processing) state.showCheckout = false },

@@ -1,6 +1,7 @@
 package id.warungmatriks.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -118,11 +119,12 @@ internal fun OrdersScreen(ownerId: String) {
                 else {
                     val current = summary!!
                     InfoLine("Jumlah transaksi", current.count.toString()); Spacer(Modifier.height(8.dp))
-                    InfoLine("Omzet penjualan", rupiah(current.total)); Spacer(Modifier.height(8.dp))
+                    InfoLine("Nilai penjualan tercatat", rupiah(current.total)); Spacer(Modifier.height(8.dp))
+                    InfoLine("QRIS dicatat, belum terverifikasi", rupiah(current.qrisTotal)); Spacer(Modifier.height(8.dp))
                     InfoLine("Tunai masuk dari penjualan", rupiah(current.cashApplied)); Spacer(Modifier.height(8.dp))
                     InfoLine("Kasbon saat transaksi", rupiah(current.initialDebt))
                     Spacer(Modifier.height(8.dp))
-                    DemoNote("Bukan saldo laci atau sisa kasbon saat ini. Hanya transaksi tunai/kasbon yang tersimpan; QRIS belum dicatat.")
+                    DemoNote("Bukan saldo laci atau sisa kasbon saat ini. Nilai QRIS dicatat tanpa bukti pembayaran dan bukan saldo bank.")
                 }
             }
         }
@@ -138,18 +140,19 @@ internal fun OrdersScreen(ownerId: String) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("Hari ini", "Semua tanggal").forEach { label -> FilterChip(selected = period == label, onClick = { period = label }, label = { Text(label, fontSize = 12.sp) }) }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    listOf(SaleHistoryFilter.ALL to "Semua", SaleHistoryFilter.PAID_AT_SALE to "Lunas", SaleHistoryFilter.CREDIT_AT_SALE to "Kasbon").forEach { (value, label) ->
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                    listOf(SaleHistoryFilter.ALL to "Semua", SaleHistoryFilter.PAID_AT_SALE to "Tunai lunas", SaleHistoryFilter.CREDIT_AT_SALE to "Kasbon", SaleHistoryFilter.QRIS to "QRIS").forEach { (value, label) ->
                         FilterChip(selected = filter == value.name, onClick = { filter = value.name }, label = { Text(label, fontSize = 11.sp) })
                     }
                 }
-                DemoNote("Filter Lunas/Kasbon berdasarkan kondisi saat transaksi, bukan status pelunasan terbaru.")
+                DemoNote("Filter tunai lunas/kasbon berdasarkan kondisi saat transaksi, bukan status pelunasan terbaru. QRIS terpisah karena pembayaran tidak diverifikasi.")
             }
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Riwayat penjualan", fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     TextButton(onClick = { revision++ }) { Text("Muat ulang") }
                 }
+                DemoNote("Riwayat otomatis dihapus setelah 7 × 24 jam; kasbon belum lunas tetap tersimpan.")
                 if (inspection) DemoNote("Data berikut adalah contoh Preview.")
                 if (loading) DemoNote("Memuat riwayat...")
                 else if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
@@ -176,7 +179,7 @@ private fun SaleCard(sale: SaleRecord, onDetails: () -> Unit) {
             Text(rupiah(sale.total), color = Blue, fontWeight = FontWeight.Bold, fontSize = 15.sp)
         }
         Spacer(Modifier.height(8.dp))
-        DemoLabel(if (sale.initialDebt > 0) "Ada kasbon saat transaksi" else "Lunas saat transaksi")
+        DemoLabel(if (sale.paymentMethod == "qris") "QRIS dicatat • belum diverifikasi" else if (sale.initialDebt > 0) "Ada kasbon saat transaksi" else "Tunai lunas saat transaksi")
         sale.customer?.let { Spacer(Modifier.height(6.dp)); Text("Pelanggan: $it", fontSize = 12.sp, color = Muted) }
         TextButton(onClick = onDetails) { Text("Lihat rincian") }
     }
@@ -199,12 +202,17 @@ private fun SaleDetails(sale: SaleRecord, snapshots: List<SaleItemSnapshot>?, er
                 Spacer(Modifier.height(8.dp))
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            val method = if (sale.initialDebt == 0) "Tunai" else if (sale.cashApplied > 0) "Tunai + kasbon" else "Kasbon"
+            val method = if (sale.paymentMethod == "qris") "QRIS • belum diverifikasi" else if (sale.initialDebt == 0) "Tunai" else if (sale.cashApplied > 0) "Tunai + kasbon" else "Kasbon"
             InfoLine("Metode saat transaksi", method); Spacer(Modifier.height(6.dp))
             InfoLine("Total penjualan", rupiah(sale.total)); Spacer(Modifier.height(6.dp))
-            InfoLine("Tunai diserahkan", rupiah(sale.received)); Spacer(Modifier.height(6.dp))
-            InfoLine("Kembalian", rupiah(sale.change)); Spacer(Modifier.height(6.dp))
-            InfoLine("Tunai untuk penjualan", rupiah(sale.cashApplied)); Spacer(Modifier.height(6.dp))
+            if (sale.paymentMethod == "qris") {
+                InfoLine("Nominal QRIS dicatat", rupiah(sale.total)); Spacer(Modifier.height(6.dp))
+                DemoNote("Pencatatan QRIS bukan bukti bahwa pembayaran berhasil.")
+            } else {
+                InfoLine("Tunai diserahkan", rupiah(sale.received)); Spacer(Modifier.height(6.dp))
+                InfoLine("Kembalian", rupiah(sale.change)); Spacer(Modifier.height(6.dp))
+                InfoLine("Tunai untuk penjualan", rupiah(sale.cashApplied)); Spacer(Modifier.height(6.dp))
+            }
             InfoLine("Kasbon saat transaksi", rupiah(sale.initialDebt)); Spacer(Modifier.height(6.dp))
             val gross = snapshots?.let { grossProfitForSale(it) }
             InfoLine("Laba kotor estimasi", gross?.let { rupiah(it) } ?: "Tidak diketahui")
