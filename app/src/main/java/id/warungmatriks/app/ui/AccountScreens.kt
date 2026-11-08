@@ -41,7 +41,7 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
         DemoCard {
             MenuRow(Icons.Default.CloudOff, "Cadangkan & pulihkan", "Belum ada sinkronisasi atau backup") { info = "Backup dan sinkronisasi belum tersedia." }
             HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Line)
-            MenuRow(Icons.Default.FileDownload, "Ekspor laporan", "PDF & spreadsheet") { info = "Ekspor laporan belum tersedia." }
+            MenuRow(Icons.Default.FileDownload, "Ekspor laporan", "PDF melalui halaman Laporan") { info = "Buka halaman Laporan untuk mengunduh atau membagikan PDF." }
         }
         SectionGap(); GroupTitle("Bantuan & keamanan")
         DemoCard {
@@ -51,7 +51,7 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
         }
         if (signOutBusy) Text("Sedang keluar...", color = Muted, fontSize = 12.sp)
         signOutError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
-        Spacer(Modifier.height(16.dp)); DemoNote("Profil, kasir, dan kas disimpan di perangkat sebagai prototipe. Laporan dan beberapa fitur keuangan masih demo.")
+        Spacer(Modifier.height(16.dp)); DemoNote("Profil, kasir, dan kas disimpan di perangkat sebagai prototipe. Beberapa fitur keuangan masih dalam tahap pengembangan.")
     }
     info?.let { text -> DemoDialog("Informasi demo", text) { info = null } }
     if (binary) BinaryDialog(onClose = { binary = false })

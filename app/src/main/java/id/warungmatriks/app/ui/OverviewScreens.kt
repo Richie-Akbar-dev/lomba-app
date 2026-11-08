@@ -24,52 +24,6 @@ import id.warungmatriks.app.data.needsRestock
 import kotlinx.coroutines.CancellationException
 
 @Composable
-private fun SummaryCard(title: String, value: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
-    DemoCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Surface(color = PaleBlue, shape = RoundedCornerShape(12.dp)) { Icon(icon, null, tint = Blue, modifier = Modifier.padding(11.dp)) }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) { Text(title, fontSize = 13.sp, color = Muted); Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Ink); Text(subtitle, fontSize = 11.sp, color = Muted) }
-        }
-    }
-}
-
-@Composable
-internal fun ReportsScreen() {
-    DemoPage("Laporan Warung", "Ringkasan usaha • data ilustrasi") {
-        DemoLabel("Bulan ini • Contoh")
-        Spacer(Modifier.height(16.dp))
-        GroupTitle("Metrik finansial")
-        SummaryCard("Total omzet penjualan", "Rp48,75 juta", "Penjualan bruto • contoh", Icons.Default.TrendingUp)
-        Spacer(Modifier.height(9.dp))
-        SummaryCard("Estimasi laba kotor", "Rp13,9 juta", "Sebelum biaya operasional • contoh", Icons.Default.BarChart)
-        Spacer(Modifier.height(9.dp))
-        SummaryCard("Belanja kulakan", "Rp34,85 juta", "Pembelian persediaan • contoh", Icons.Default.Inventory2)
-        SectionGap()
-        GroupTitle("Posisi uang & piutang", "Ketiga pos ini tidak boleh dijumlahkan sebagai uang fisik")
-        DemoCard {
-            InfoLine("Uang fisik di laci", "Rp1.450.000"); Spacer(Modifier.height(12.dp))
-            InfoLine("QRIS menunggu penyelesaian", "Rp320.000"); Spacer(Modifier.height(12.dp))
-            InfoLine("Kasbon belum lunas", "Rp79.500")
-        }
-        SectionGap()
-        GroupTitle("Tren usaha", "Perbandingan visual contoh, bukan data aktual")
-        DemoCard {
-            Row(Modifier.fillMaxWidth().height(116.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) {
-                listOf(0.45f, 0.68f, 0.52f, 0.82f, 0.6f, 0.95f, 0.7f).forEach { h ->
-                    Surface(color = Blue.copy(alpha = 0.7f), shape = RoundedCornerShape(topStart = 5.dp, topEnd = 5.dp), modifier = Modifier.width(22.dp).fillMaxHeight(h)) {}
-                }
-            }
-            Spacer(Modifier.height(8.dp)); Text("Sn         Sl         Rb        Km        Jm        Sb        Mg", fontSize = 11.sp, color = Muted)
-        }
-        SectionGap()
-        GroupTitle("Produk pilihan")
-        DemoCard { InfoLine("Indomie Goreng", "Rp3.500"); Spacer(Modifier.height(10.dp)); InfoLine("Minyak Kita 1L", "Rp16.000") }
-        Spacer(Modifier.height(16.dp)); DemoNote("Grafik, nilai dan tren hanya rancangan. Ekspor dan laporan nyata belum tersedia.")
-    }
-}
-
-@Composable
 internal fun NotificationsScreen(ownerId: String, onBack: () -> Unit, onCredit: () -> Unit) {
     val context = LocalContext.current
     val inspection = LocalInspectionMode.current
@@ -127,7 +81,5 @@ private fun NotificationCard(type: String, title: String, detail: String, icon: 
     }
 }
 
-@Preview(showBackground = true, widthDp = 360, heightDp = 800)
-@Composable private fun ReportsPreview() { WarungMatriksTheme { ReportsScreen() } }
 @Preview(showBackground = true, widthDp = 360, heightDp = 800)
 @Composable private fun NotificationsPreview() { WarungMatriksTheme { NotificationsScreen("preview", {}, {}) } }

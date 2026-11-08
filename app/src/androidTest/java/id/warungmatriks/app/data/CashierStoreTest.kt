@@ -196,11 +196,14 @@ class CashierStoreTest {
         } finally { store.close(); context.deleteDatabase(dbName) }
     }
 
-    @Test fun retentionDeletesExpiredSalesButKeepsUnpaidDebtAndCashLedger() = runBlocking {
+    @Test fun retentionHidesAfterSevenDaysAndCleansOnMonthlyCutoff() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val dbName = "retention-" + UUID.randomUUID() + ".db"
         val owner = CashierStore(context, "owner", dbName)
         val other = CashierStore(context, "other", dbName)
+        fun at(year: Int, month: Int, day: Int): Long = java.util.Calendar.getInstance().apply {
+            clear(); set(year, month - 1, day, 12, 0, 0)
+        }.timeInMillis
         try {
             val product = Product("item", "Sabun", 5000, 3000, 10)
             owner.saveProduct(product); other.saveProduct(product)
@@ -208,27 +211,24 @@ class CashierStoreTest {
             owner.checkout("young-cash", listOf(CashierLine(product, 1)), 5000, "")
             owner.checkout("old-debt", listOf(CashierLine(product, 1)), 1000, "Bu RT")
             other.checkout("other-old", listOf(CashierLine(product, 1)), 5000, "")
-            val now = System.currentTimeMillis()
-            val cutoff = now - HistoryRetention.RETENTION_MS
-            owner.writableDatabase.execSQL("UPDATE sales SET created_at=? WHERE id IN ('old-cash','old-debt','other-old')", arrayOf(cutoff))
-            owner.writableDatabase.execSQL("UPDATE sales SET created_at=? WHERE id='young-cash'", arrayOf(cutoff + 1))
-            HistoryRetention.clean(owner.writableDatabase, now, "owner")
+            val db = owner.writableDatabase
+            db.execSQL("UPDATE sales SET created_at=? WHERE id IN ('old-cash','old-debt','other-old')", arrayOf(at(2025,1,20)))
+            db.execSQL("UPDATE sales SET created_at=? WHERE id='young-cash'", arrayOf(at(2025,1,30)))
+            val feb1 = at(2025,2,1)
+            HistoryRetention.clean(db, feb1, "owner")
             fun count(table: String, saleId: String): Int {
                 val column = if (table == "sales") "id" else "sale_id"
-                owner.readableDatabase.rawQuery("SELECT COUNT(*) FROM $table WHERE $column=?", arrayOf(saleId)).use { it.moveToFirst(); return it.getInt(0) }
+                db.rawQuery("SELECT COUNT(*) FROM $table WHERE $column=?", arrayOf(saleId)).use { it.moveToFirst(); return it.getInt(0) }
             }
-            assertEquals(0, count("sales", "old-cash")); assertEquals(0, count("sale_items", "old-cash"))
-            assertEquals(1, count("cash_movements", "old-cash"))
-            assertEquals(1, count("sales", "young-cash")); assertEquals(1, count("sales", "other-old"))
-            assertEquals(1, count("sales", "old-debt")); assertEquals(1, count("sale_items", "old-debt"))
-            assertEquals(1, count("receivables", "old-debt"))
-            // Simulate a future settlement implementation; no settlement UI exists yet.
-            owner.writableDatabase.execSQL("UPDATE receivables SET amount_remaining=0 WHERE sale_id='old-debt'")
-            HistoryRetention.clean(owner.writableDatabase, now, "owner")
-            assertEquals(0, count("receivables", "old-debt")); assertEquals(0, count("sales", "old-debt"))
-            assertEquals(0, count("sale_items", "old-debt")); assertEquals(1, count("cash_movements", "old-debt"))
-            HistoryRetention.clean(other.writableDatabase, now)
-            assertEquals(0, count("sales", "other-old"))
+            assertEquals(0, count("sales", "old-cash")); assertEquals(1, count("cash_movements", "old-cash"))
+            assertEquals(1, count("sales", "young-cash")); assertEquals(1, count("sales", "old-debt")); assertEquals(1, count("sales", "other-old"))
+            val feb8 = at(2025,2,8)
+            val visible = owner.saleHistory(null, null, SaleHistoryFilter.ALL, now = feb8).sales.map { it.id }
+            assertTrue("young-cash" !in visible); assertTrue("old-debt" in visible)
+            assertEquals(1, count("sales", "young-cash")) // wait until next first
+            HistoryRetention.clean(db, at(2025,3,1), "owner")
+            assertEquals(0, count("sales", "young-cash")); assertEquals(1, count("sales", "old-debt"))
+            assertEquals(1, count("sales", "other-old"))
         } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
     }
 
@@ -402,6 +402,10 @@ class CashierStoreTest {
         db.execSQL("CREATE TABLE receivables (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, customer TEXT NOT NULL, amount_remaining INTEGER NOT NULL)")
         db.execSQL("INSERT INTO receivables SELECT sale_id,owner_id,customer,amount_remaining FROM receivables_v6")
         db.execSQL("DROP TABLE receivables_v6")
+        db.execSQL("ALTER TABLE sale_items RENAME TO sale_items_v7")
+        db.execSQL("CREATE TABLE sale_items (sale_id TEXT NOT NULL, product_id TEXT NOT NULL, product_name TEXT NOT NULL, quantity INTEGER NOT NULL, price INTEGER NOT NULL, cost INTEGER)")
+        db.execSQL("INSERT INTO sale_items SELECT sale_id,product_id,product_name,quantity,price,cost FROM sale_items_v7")
+        db.execSQL("DROP TABLE sale_items_v7")
     }
 
     @Test fun creditCheckoutAndInstallmentsAreAtomicAndAccountScoped() = runBlocking {
@@ -461,6 +465,60 @@ class CashierStoreTest {
             assertEquals(5000, store.creditDetails().single().remaining)
             store.readableDatabase.rawQuery("SELECT COUNT(*) FROM credit_payments", null).use { it.moveToFirst(); assertEquals(0, it.getInt(0)) }
         } finally { store.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun monthlyReportSeparatesSalesCashCreditQrisAndStock() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "report-" + UUID.randomUUID() + ".db"
+        val store = CashierStore(context, "owner", dbName)
+        val other = CashierStore(context, "other", dbName)
+        try {
+            val item = Product("p", "Barang", 5000, 3000, 5, category = "Uji")
+            store.saveProduct(item); other.saveProduct(item)
+            DemoData.products.forEach { store.setProductActive(it.id, false) }
+            store.checkout("cash", listOf(CashierLine(item, 1)), 5000, "")
+            store.checkoutCredit("credit", listOf(CashierLine(item, 1)), 1000, "Siti", "08123456789", null, false)
+            store.checkoutQris("qris", listOf(CashierLine(item, 1)))
+            store.payCredit("pay", "credit", 1000)
+            store.addManualCash("deposit", "in", "deposit", 2000, "")
+            store.addManualCash("out", "out", "withdrawal", 4000, "")
+            other.checkout("other-sale", listOf(CashierLine(item, 1)), 5000, "")
+            store.updateProduct(item.copy(category = "Baru"))
+            val r = store.report()
+            assertEquals(15000L, r.sales); assertEquals(5000L, r.qris); assertEquals(3L, r.count)
+            assertEquals(9000L, r.cashIn); assertEquals(4000L, r.cashOut)
+            assertEquals(1000L, r.installmentCash); assertEquals(9000L, r.modal ?: -1L); assertEquals(6000L, r.profit ?: -1L)
+            assertEquals(10000L, r.activeStockValue); assertEquals("Uji", r.categories.single().name)
+            assertEquals(3L, r.bestProducts.single().quantity)
+            assertEquals(5000L, other.report().sales)
+        } finally { store.close(); other.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun reportDoesNotInventUnknownCosts() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "report-unknown-" + UUID.randomUUID() + ".db"
+        val store = CashierStore(context, "owner", dbName)
+        try {
+            val item = Product("p", "Barang", 5000, null, 2)
+            store.saveProduct(item); store.checkout("sale", listOf(CashierLine(item,1)), 5000, "")
+            val r = store.report(); assertNull(r.modal); assertNull(r.profit); assertEquals(1L, r.missingCost)
+        } finally { store.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun reportPdfCreatesARealPdfWithCreditDetails() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "report-pdf-" + UUID.randomUUID() + ".db"
+        val store = CashierStore(context, "owner", dbName)
+        var pdf: java.io.File? = null
+        try {
+            val item = Product("p", "Barang", 5000, 3000, 2)
+            store.saveProduct(item)
+            store.checkoutCredit("sale", listOf(CashierLine(item, 1)), 1000, "Siti", "08123456789", null, false)
+            val credit = store.creditDetails().single()
+            pdf = makeReportPdf(context, store.report(), "Warung", listOf(ExportCredit(credit, store.saleItemSnapshots(credit.saleId))))
+            assertTrue(pdf.exists()); assertTrue(pdf.length() > 0)
+            assertEquals("%PDF", pdf.inputStream().use { input -> String(ByteArray(4).also { input.read(it) }, Charsets.US_ASCII) })
+        } finally { pdf?.delete(); store.close(); context.deleteDatabase(dbName) }
     }
 
 }

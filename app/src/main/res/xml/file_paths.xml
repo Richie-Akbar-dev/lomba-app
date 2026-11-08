@@ -1,3 +1,4 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <cache-path name="report_share" path="report_share/" />
     <cache-path name="product_camera" path="product_camera/" />
 </paths>

@@ -25,6 +25,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
 /** QR creation records a sale, but never verifies an actual payment. */
@@ -34,6 +35,8 @@ internal fun QrisDialog(total: Int, source: String, onSourceChange: (String) -> 
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
     var recorded by remember { mutableStateOf(false) }
+    var showReminder by remember { mutableStateOf(false) }
+    LaunchedEffect(showReminder) { if (showReminder) { delay(5_000); showReminder = false } }
     val scope = rememberCoroutineScope()
     AlertDialog(
         onDismissRequest = { if (!busy) onClose() },
@@ -62,6 +65,7 @@ internal fun QrisDialog(total: Int, source: String, onSourceChange: (String) -> 
                             } catch (e: Exception) { generated.recycle(); throw e }
                             recorded = true
                             image = generated
+                            showReminder = true
                         } catch (e: CancellationException) { throw e } catch (_: InsufficientStockException) { error = "Stok tidak cukup. Tutup QR dan periksa keranjang." } catch (_: ProductChangedException) { error = "Data barang berubah. Tutup QR dan pilih barang lagi." } catch (e: IllegalArgumentException) { error = e.message ?: "Payload QRIS tidak valid." } catch (_: Exception) { error = "QR atau penjualan belum dapat disimpan. Periksa penyimpanan dan coba lagi." } finally { busy = false }
                     }
                 }, enabled = source.isNotBlank() && !busy && !recorded, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Membuat QR dan mencatat..." else if (recorded) "Penjualan sudah dicatat" else "Tampilkan QR & catat penjualan") }
@@ -72,5 +76,10 @@ internal fun QrisDialog(total: Int, source: String, onSourceChange: (String) -> 
             }
         },
         confirmButton = { TextButton(onClick = onClose, enabled = !busy) { Text("Tutup") } },
+    )
+    if (showReminder) AlertDialog(
+        onDismissRequest = { showReminder = false }, title = { Text("Transaksi QRIS dicatat") },
+        text = { Text("Silakan periksa dan verifikasi pembayaran pada aplikasi penyedia QRIS.") },
+        confirmButton = { TextButton(onClick = { showReminder = false }) { Text("Mengerti") } },
     )
 }

@@ -152,7 +152,7 @@ internal fun OrdersScreen(ownerId: String) {
                     Text("Riwayat penjualan", fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     TextButton(onClick = { revision++ }) { Text("Muat ulang") }
                 }
-                DemoNote("Riwayat otomatis dihapus setelah 7 × 24 jam; kasbon belum lunas tetap tersimpan.")
+                DemoNote("Penjualan disembunyikan setelah 7 × 24 jam, lalu dibersihkan pada jadwal tanggal 1. Kasbon belum lunas tetap tersedia.")
                 if (inspection) DemoNote("Data berikut adalah contoh Preview.")
                 if (loading) DemoNote("Memuat riwayat...")
                 else if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)

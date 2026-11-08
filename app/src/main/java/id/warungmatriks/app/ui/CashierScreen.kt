@@ -266,7 +266,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
                 Text("Tampilkan QRIS", fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
         }
-        Text("Penjualan dan kas tunai tersimpan lokal; pembayaran QRIS tidak diverifikasi. Laporan masih demo.", modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp, bottom = 16.dp), color = Muted, fontSize = 11.sp)
+        Text("Penjualan dan kas tunai tersimpan lokal. Periksa pembayaran QRIS di aplikasi penyedia.", modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp, bottom = 16.dp), color = Muted, fontSize = 11.sp)
         if (state.receivables.isEmpty()) TextButton(onClick = onCredit) { Text("Buka kasbon pelanggan →") }
         if (state.receivables.isNotEmpty()) {
             SectionHeading("Kasbon lokal", "${state.receivables.size} catatan")
