@@ -6,6 +6,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.tooling.preview.Preview
@@ -24,10 +27,13 @@ internal enum class Screen(val title: String, val icon: ImageVector? = null) {
 @Composable
 internal fun WarungMatriksApp(account: SignedInAccount, onSignOut: () -> Unit, signOutBusy: Boolean = false, signOutError: String? = null) {
     val mainScreens = listOf(Screen.KASIR, Screen.PESANAN, Screen.BARANG, Screen.LAPORAN, Screen.AKUN)
-    var screen by remember { mutableStateOf(Screen.KASIR) }
-    val backStack = remember { mutableStateListOf<Screen>() }
+    var screen by rememberSaveable(account.uid) { mutableStateOf(Screen.KASIR) }
+    val backStack = rememberSaveable(account.uid, saver = listSaver<SnapshotStateList<Screen>, String>(
+        save = { list -> list.map { it.name } },
+        restore = { names -> names.map { Screen.valueOf(it) }.toMutableStateList() },
+    )) { mutableStateListOf() }
     val cashierState = remember { CashierState() }
-    var editingProductId by remember { mutableStateOf<String?>(null) }
+    var editingProductId by rememberSaveable(account.uid) { mutableStateOf<String?>(null) }
     fun navigate(next: Screen) { if (screen != next) { backStack.add(screen); screen = next } }
     fun back() { screen = if (backStack.isNotEmpty()) backStack.removeAt(backStack.lastIndex) else Screen.KASIR }
     BackHandler(enabled = screen !in mainScreens) { back() }
@@ -45,12 +51,12 @@ internal fun WarungMatriksApp(account: SignedInAccount, onSignOut: () -> Unit, s
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
-                Screen.KASIR -> CashierScreen(cashierState, ownerId = account.uid, cashierName = account.shop.ownerName, onNotifications = { navigate(Screen.NOTIFIKASI) }, onAccount = { navigate(Screen.AKUN) }, onCash = { navigate(Screen.KAS) }, onInventory = { navigate(Screen.BARANG) })
+                Screen.KASIR -> CashierScreen(cashierState, ownerId = account.uid, cashierName = account.shop.ownerName, onNotifications = { navigate(Screen.NOTIFIKASI) }, onAccount = { navigate(Screen.AKUN) }, onCash = { navigate(Screen.KAS) }, onInventory = { navigate(Screen.BARANG) }, onAddProduct = { editingProductId = null; navigate(Screen.TAMBAH) })
                 Screen.PESANAN -> OrdersScreen(ownerId = account.uid)
                 Screen.BARANG -> InventoryScreen(ownerId = account.uid, onAdd = { editingProductId = null; navigate(Screen.TAMBAH) }, onEdit = { editingProductId = it; navigate(Screen.TAMBAH) })
                 Screen.LAPORAN -> ReportsScreen()
                 Screen.AKUN -> AccountScreen(account = account, onSignOut = onSignOut, signOutBusy = signOutBusy, signOutError = signOutError, onNotifications = { navigate(Screen.NOTIFIKASI) })
-                Screen.NOTIFIKASI -> NotificationsScreen(onBack = { back() }, onCredit = { navigate(Screen.KASBON) })
+                Screen.NOTIFIKASI -> NotificationsScreen(ownerId = account.uid, onBack = { back() }, onCredit = { navigate(Screen.KASBON) })
                 Screen.KAS -> CashLedgerScreen(onBack = { back() })
                 Screen.KASBON -> CreditScreen(onBack = { back() })
                 Screen.TAMBAH -> AddProductScreen(ownerId = account.uid, productId = editingProductId, onBack = { back() })

@@ -38,6 +38,8 @@ import id.warungmatriks.app.data.CheckoutResult
 import id.warungmatriks.app.data.InsufficientStockException
 import id.warungmatriks.app.data.ProductChangedException
 import id.warungmatriks.app.data.LocalReceivable
+import id.warungmatriks.app.data.matchesSearch
+import id.warungmatriks.app.data.needsRestock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -50,6 +52,7 @@ internal class CashierState {
     val receivables = mutableStateListOf<LocalReceivable>()
     var ready by mutableStateOf(false)
     var query by mutableStateOf("")
+    var exactBarcode by mutableStateOf(false)
     var cashText by mutableStateOf("")
     var customer by mutableStateOf("")
     var showCheckout by mutableStateOf(false)
@@ -65,7 +68,7 @@ internal class CashierState {
 }
 
 @Composable
-internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: String, onNotifications: () -> Unit, onAccount: () -> Unit, onCash: () -> Unit, onInventory: () -> Unit) {
+internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: String, onNotifications: () -> Unit, onAccount: () -> Unit, onCash: () -> Unit, onInventory: () -> Unit, onAddProduct: () -> Unit) {
     val context = LocalContext.current
     val inspection = LocalInspectionMode.current
     val store = remember(context, ownerId) { CashierStore(context, ownerId) }
@@ -96,7 +99,8 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
     val count = quantities.values.sumOf { it.toLong() }
     val totals = calculateCartTotals(products, quantities)
     val total = totals.subtotal
-    val visible = products.filter { it.name.contains(state.query.trim(), ignoreCase = true) }
+    val scanBarcode = rememberBarcodeScanner(onScanned = { state.query = it; state.exactBarcode = true }, onError = { state.notice = it })
+    val visible = products.filter { it.matchesSearch(state.query, state.exactBarcode) }
     val cash = state.cashText.toIntOrNull() ?: 0
     val debt = (total - cash).coerceAtLeast(0)
     fun changeQuantity(product: Product, delta: Int) {
@@ -109,7 +113,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
             .padding(horizontal = 18.dp),
     ) {
         Spacer(Modifier.height(14.dp))
-        Header(cashierName = cashierName, onNotifications = onNotifications, onAccount = onAccount)
+        Header(cashierName = cashierName, lowStockCount = if (state.ready) state.catalog.count { it.needsRestock() } else 0, onNotifications = onNotifications, onAccount = onAccount)
         Spacer(Modifier.height(22.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -137,9 +141,10 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
         }
         Spacer(Modifier.height(16.dp))
         OutlinedTextField(
-            value = state.query, onValueChange = { state.query = it }, modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Cari nama produk...", fontSize = 14.sp, color = Muted) },
+            value = state.query, onValueChange = { state.query = it; state.exactBarcode = false }, modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Cari nama atau barcode...", fontSize = 14.sp, color = Muted) },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Muted) },
+            trailingIcon = { IconButton(onClick = scanBarcode) { Icon(Icons.Default.QrCodeScanner, "Pindai barcode barang", tint = Blue) } },
             singleLine = true, shape = RoundedCornerShape(14.dp),
             colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = Color.White, focusedContainerColor = Color.White, unfocusedBorderColor = Line),
         )
@@ -148,6 +153,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
             Text("Daftar produk", fontSize = 18.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             TextButton(onClick = onInventory) { Text("Lihat barang", fontSize = 12.sp) }
         }
+        TextButton(onClick = onAddProduct) { Icon(Icons.Default.Add, null); Text(" Tambah barang") }
         DemoNote("Katalog awal berisi barang contoh. Periksa, ubah, atau nonaktifkan di Barang sebelum digunakan.")
         Spacer(Modifier.height(12.dp))
         if (!state.ready) {
@@ -322,7 +328,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
     }
 
     state.notice?.let { message ->
-        AlertDialog(onDismissRequest = { state.notice = null }, title = { Text("Informasi demo") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { state.notice = null }) { Text("Mengerti") } })
+        AlertDialog(onDismissRequest = { state.notice = null }, title = { Text("Informasi") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { state.notice = null }) { Text("Mengerti") } })
     }
     state.receipt?.let { result ->
         AlertDialog(
@@ -335,7 +341,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
 }
 
 @Composable
-private fun Header(cashierName: String, onNotifications: () -> Unit, onAccount: () -> Unit) {
+private fun Header(cashierName: String, lowStockCount: Int, onNotifications: () -> Unit, onAccount: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
         Image(painterResource(R.drawable.warung_matriks_logo), contentDescription = "Logo Warung Matriks", modifier = Modifier.size(43.dp))
         Spacer(Modifier.width(8.dp))
@@ -344,7 +350,9 @@ private fun Header(cashierName: String, onNotifications: () -> Unit, onAccount: 
             Text("Kasir: $cashierName", fontSize = 11.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         IconButton(onClick = onNotifications, modifier = Modifier.size(40.dp)) {
-            Icon(Icons.Default.NotificationsNone, contentDescription = "Notifikasi demo", tint = Ink)
+            BadgedBox(badge = { if (lowStockCount > 0) Badge { Text(if (lowStockCount > 99) "99+" else lowStockCount.toString()) } }) {
+                Icon(Icons.Default.NotificationsNone, contentDescription = "Notifikasi stok: $lowStockCount barang", tint = Ink)
+            }
         }
         Spacer(Modifier.width(4.dp))
         IconButton(onClick = onAccount, modifier = Modifier.size(38.dp).background(PaleBlue, CircleShape)) {

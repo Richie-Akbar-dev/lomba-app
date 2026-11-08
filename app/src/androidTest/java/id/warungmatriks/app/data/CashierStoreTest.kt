@@ -232,4 +232,91 @@ class CashierStoreTest {
         } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
     }
 
+    @Test fun stockAdditionIsScopedAtomicAndIdempotent() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "add-stock-" + UUID.randomUUID() + ".db"
+        val owner = CashierStore(context, "owner", dbName)
+        val other = CashierStore(context, "other", dbName)
+        try {
+            val item = Product("soap", "Sabun", 5000, 3000, 3, barcode = "0012345")
+            owner.saveProduct(item); other.saveProduct(item)
+            assertEquals(8, owner.addStock("add-1", item.id, 5))
+            assertEquals(8, owner.addStock("add-1", item.id, 5))
+            assertEquals(8, owner.stocks().getValue(item.id))
+            assertEquals(3, other.stocks().getValue(item.id))
+            assertEquals("0012345", owner.products().first { it.id == item.id }.barcode)
+            owner.readableDatabase.rawQuery("SELECT quantity,before_quantity,after_quantity FROM stock_additions WHERE owner_id='owner' AND id='add-1'", null).use {
+                assertTrue(it.moveToFirst()); assertEquals(5, it.getInt(0)); assertEquals(3, it.getInt(1)); assertEquals(8, it.getInt(2)); assertTrue(!it.moveToNext())
+            }
+            owner.readableDatabase.rawQuery("SELECT COUNT(*) FROM cash_movements WHERE owner_id='owner'", null).use { it.moveToFirst(); assertEquals(0, it.getInt(0)) }
+            try { owner.addStock("add-1", item.id, 6); fail("A retry with different data must be rejected") } catch (_: IllegalArgumentException) { }
+            assertEquals(8, owner.stocks().getValue(item.id))
+        } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun stockAdditionRejectsInvalidAndOverflowWithoutPartialWrites() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "add-stock-limit-" + UUID.randomUUID() + ".db"
+        val store = CashierStore(context, "owner", dbName)
+        try {
+            val product = Product("full", "Barang", 1000, 500, Int.MAX_VALUE - 1)
+            store.saveProduct(product)
+            try { store.addStock("zero", product.id, 0); fail("Zero must be rejected") } catch (_: IllegalArgumentException) { }
+            try { store.addStock("missing", "missing-product", 1); fail("Missing product must be rejected") } catch (_: StockAdditionException) { }
+            try { store.addStock("overflow", product.id, 2); fail("Overflow must be rejected") } catch (_: StockAdditionException) { }
+            assertEquals(Int.MAX_VALUE - 1, store.stocks().getValue(product.id))
+            assertEquals(Int.MAX_VALUE, store.addStock("max", product.id, 1))
+            store.readableDatabase.rawQuery("SELECT COUNT(*) FROM stock_additions WHERE owner_id='owner'", null).use { it.moveToFirst(); assertEquals(1, it.getInt(0)) }
+        } finally { store.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun stockAdditionRollsBackWhenAuditInsertFails() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "add-stock-rollback-" + UUID.randomUUID() + ".db"
+        val store = CashierStore(context, "owner", dbName)
+        try {
+            val product = Product("soap", "Sabun", 5000, null, 3)
+            store.saveProduct(product)
+            store.writableDatabase.execSQL("CREATE TRIGGER fail_add BEFORE INSERT ON stock_additions BEGIN SELECT RAISE(ABORT, 'test failure'); END")
+            try { store.addStock("attempt", product.id, 5); fail("Insert failure must roll back stock") } catch (_: android.database.sqlite.SQLiteException) { }
+            assertEquals(3, store.stocks().getValue(product.id))
+        } finally { store.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun upgradeV3PreservesDataAndAddsStockAdjustments() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "migration-v3-" + UUID.randomUUID() + ".db"
+        val before = CashierStore(context, "owner", dbName)
+        val product = Product("legacy", "Barang Lama", 5000, 3000, 4, barcode = "000123")
+        before.saveProduct(product)
+        before.checkout("old-sale", listOf(CashierLine(product, 1)), 0, "Bu RT")
+        before.writableDatabase.execSQL("DROP TABLE stock_additions")
+        before.writableDatabase.version = 3
+        before.close()
+        val after = CashierStore(context, "owner", dbName)
+        try {
+            assertEquals(3, after.stocks().getValue(product.id))
+            assertEquals("000123", after.products().first { it.id == product.id }.barcode)
+            assertEquals(5000, after.receivables().single().remaining)
+            assertEquals(5, after.addStock("new-adjustment", product.id, 2))
+        } finally { after.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun barcodesAreUniquePerOwnerAndKeepLeadingZeros() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "barcode-" + UUID.randomUUID() + ".db"
+        val owner = CashierStore(context, "owner", dbName)
+        val other = CashierStore(context, "other", dbName)
+        try {
+            val item = Product("one", "Sabun", 5000, null, 3, barcode = "0012345")
+            owner.saveProduct(item)
+            try { owner.saveProduct(item.copy(id = "two")); fail("Duplicate barcode must be rejected") }
+            catch (_: android.database.sqlite.SQLiteConstraintException) { }
+            other.saveProduct(item.copy(id = "two"))
+            assertEquals("0012345", owner.products().first { it.id == "one" }.barcode)
+            assertEquals("0012345", other.products().first { it.id == "two" }.barcode)
+            assertTrue(owner.products().none { it.id == "two" })
+        } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
+    }
+
 }

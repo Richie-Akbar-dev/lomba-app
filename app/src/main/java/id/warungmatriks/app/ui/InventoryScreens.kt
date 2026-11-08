@@ -1,9 +1,12 @@
 package id.warungmatriks.app.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteConstraintException
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -27,6 +30,8 @@ import androidx.compose.ui.unit.sp
 import id.warungmatriks.app.data.*
 import id.warungmatriks.app.ui.theme.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -36,20 +41,26 @@ internal fun InventoryScreen(ownerId: String, onAdd: () -> Unit, onEdit: (String
     val context = LocalContext.current
     val inspection = LocalInspectionMode.current
     val store = remember(context, ownerId) { CashierStore(context, ownerId) }
-    var query by remember { mutableStateOf("") }
+    var query by rememberSaveable { mutableStateOf("") }
+    var exactBarcode by rememberSaveable { mutableStateOf(false) }
     var products by remember { mutableStateOf<List<Product>>(emptyList()) }
     var message by remember { mutableStateOf<String?>(null) }
     var confirmActive by remember { mutableStateOf<Product?>(null) }
+    var addStockProduct by remember { mutableStateOf<Product?>(null) }
+    var stockNotice by remember { mutableStateOf<String?>(null) }
     var updating by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(store, inspection) {
         try { products = if (inspection) DemoData.products else store.products() } catch (e: CancellationException) { throw e } catch (_: Exception) { message = "Daftar barang belum dapat dibuka." }
     }
-    val list = products.filter { it.name.contains(query.trim(), ignoreCase = true) }
-    val low = products.filter { it.active && it.stock <= it.minimumStock }
-    DemoPage("Daftar Barang", "Inventaris tersimpan di perangkat") {
-        OutlinedTextField(value = query, onValueChange = { query = it }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
-            leadingIcon = { Icon(Icons.Default.Search, null) }, placeholder = { Text("Cari nama barang...") })
+    val scanBarcode = rememberBarcodeScanner(onScanned = { query = it; exactBarcode = true; message = null }, onError = { message = it })
+    val list = products.filter { it.matchesSearch(query, exactBarcode) }
+    val low = products.filter { it.needsRestock() }
+    DemoPage("Daftar Barang", "Inventaris tersimpan di perangkat", badgeText = "DATA LOKAL") {
+        OutlinedTextField(value = query, onValueChange = { query = it; exactBarcode = false }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
+            leadingIcon = { Icon(Icons.Default.Search, null) },
+            trailingIcon = { IconButton(onClick = scanBarcode) { Icon(Icons.Default.QrCodeScanner, "Pindai barcode barang") } },
+            placeholder = { Text("Cari nama atau barcode...") })
         Spacer(Modifier.height(12.dp))
         DemoNote("Katalog awal berisi barang contoh, bukan data toko Anda. Periksa, ubah, atau nonaktifkan sebelum digunakan.")
         Button(onClick = onAdd, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) { Icon(Icons.Default.Add, null); Text(" Tambah barang") }
@@ -57,10 +68,11 @@ internal fun InventoryScreen(ownerId: String, onAdd: () -> Unit, onEdit: (String
         DemoCard {
             DemoLabel("${low.size} perlu kulak")
             if (low.isEmpty()) { Spacer(Modifier.height(8.dp)); DemoNote("Belum ada barang yang perlu kulak.") }
-            low.take(5).forEach { product -> Spacer(Modifier.height(8.dp)); InfoLine(product.name, "${product.stock} / min ${product.minimumStock} pcs") }
+            low.forEach { product -> Spacer(Modifier.height(8.dp)); InfoLine(product.name, "${product.stock} / min ${product.minimumStock} pcs") }
         }
         SectionGap(); GroupTitle("Daftar inventaris", "${list.size} barang")
         message?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+        stockNotice?.let { Text(it, color = Blue, fontSize = 12.sp) }
         if (list.isEmpty()) Text("Barang tidak ditemukan.", color = Muted)
         list.forEach { product ->
             DemoCard {
@@ -70,18 +82,31 @@ internal fun InventoryScreen(ownerId: String, onAdd: () -> Unit, onEdit: (String
                     Column(Modifier.weight(1f)) {
                         Text(product.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Text("Stok ${product.stock} pcs • ${product.category}", fontSize = 12.sp, color = Muted)
+                        product.barcode?.let { Text("Barcode: $it", fontSize = 11.sp, color = Muted) }
                         Spacer(Modifier.height(4.dp))
                         Text("Jual ${rupiah(product.price)} / pcs", color = Blue, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         Text(product.cost?.let { "Modal ${rupiah(it)} / pcs" } ?: "Modal belum diisi", color = Muted, fontSize = 11.sp)
                     }
                     IconButton(onClick = { onEdit(product.id) }) { Icon(Icons.Default.Edit, "Edit ${product.name}", tint = Blue) }
                 }
-                TextButton(onClick = { confirmActive = product }, enabled = !updating) { Text(if (product.active) "Nonaktifkan" else "Aktifkan kembali") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { addStockProduct = product; message = null; stockNotice = null }, enabled = !updating) { Text("Tambah stok") }
+                    TextButton(onClick = { confirmActive = product }, enabled = !updating) { Text(if (product.active) "Nonaktifkan" else "Aktifkan kembali") }
+                }
                 if (!product.active) DemoLabel("Tidak dijual")
             }
             Spacer(Modifier.height(10.dp))
         }
         DemoNote("Barang nonaktif tetap tersimpan, tetapi tidak muncul di kasir.")
+    }
+    addStockProduct?.let { product ->
+        AddStockDialog(product = product, store = store, onClose = { addStockProduct = null }, onSaved = { after ->
+            addStockProduct = null
+            stockNotice = "Stok ${product.name} berhasil ditambahkan (setelah penambahan: $after pcs)."
+            scope.launch {
+                try { products = store.products() } catch (e: CancellationException) { throw e } catch (_: Exception) { message = "Stok tersimpan, tetapi daftar belum dapat dimuat ulang. Buka ulang halaman." }
+            }
+        })
     }
     confirmActive?.let { product ->
         AlertDialog(onDismissRequest = { if (!updating) confirmActive = null },
@@ -95,6 +120,41 @@ internal fun InventoryScreen(ownerId: String, onAdd: () -> Unit, onEdit: (String
             }) { Text(if (product.active) "Nonaktifkan" else "Aktifkan") } },
             dismissButton = { TextButton(enabled = !updating, onClick = { confirmActive = null }) { Text("Batal") } })
     }
+}
+
+@Composable
+private fun AddStockDialog(product: Product, store: CashierStore, onClose: () -> Unit, onSaved: (Int) -> Unit) {
+    var quantity by rememberSaveable(product.id) { mutableStateOf("") }
+    val adjustmentId = rememberSaveable(product.id) { UUID.randomUUID().toString() }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val amount = quantity.toIntOrNull()
+    AlertDialog(
+        onDismissRequest = { if (!busy) onClose() },
+        title = { Text("Tambah stok") },
+        text = { Column {
+            Text(product.name, fontWeight = FontWeight.Bold)
+            Text("Stok saat ini: ${product.stock} pcs", color = Muted, fontSize = 12.sp)
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(value = quantity, onValueChange = { quantity = it.filter { c -> c in '0'..'9' }.take(9); error = null },
+                label = { Text("Jumlah stok ditambahkan (pcs)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), enabled = !busy)
+            Spacer(Modifier.height(8.dp))
+            DemoNote("Hanya menambah stok, tidak otomatis mencatat kulakan atau pengeluaran kas.")
+            error?.let { Spacer(Modifier.height(8.dp)); Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+        } },
+        confirmButton = { TextButton(enabled = !busy && amount != null && amount > 0, onClick = {
+            val add = amount ?: return@TextButton
+            busy = true; error = null
+            scope.launch {
+                try {
+                    val after = withContext(NonCancellable) { store.addStock(adjustmentId, product.id, add) }
+                    onSaved(after)
+                } catch (e: CancellationException) { throw e } catch (_: StockAdditionException) { error = "Barang tidak ditemukan atau stok melebihi batas yang didukung." } catch (_: Exception) { error = "Stok belum dapat disimpan. Coba lagi." } finally { busy = false }
+            }
+        }) { Text(if (busy) "Menyimpan..." else "Simpan") } },
+        dismissButton = { TextButton(enabled = !busy, onClick = onClose) { Text("Batal") } },
+    )
 }
 
 @Composable
@@ -143,6 +203,7 @@ internal fun AddProductScreen(ownerId: String, productId: String? = null, onBack
             } catch (e: CancellationException) { throw e } catch (_: Exception) { message = "Foto tidak dapat dibaca atau disimpan. Coba foto lain." } finally { if (fromCamera) ProductPhotoStorage.deleteCamera(context, uri); busy = false }
         }
     }
+    val scanBarcode = rememberBarcodeScanner(onScanned = { barcode = it; message = null }, onError = { message = it })
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> if (uri != null) importPhoto(uri) }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         cameraUri?.let { value ->
@@ -150,6 +211,13 @@ internal fun AddProductScreen(ownerId: String, productId: String? = null, onBack
             if (success) importPhoto(uri, fromCamera = true) else ProductPhotoStorage.deleteCamera(context, uri)
         }
         cameraUri = null
+    }
+    fun launchCamera() {
+        try { val uri = ProductPhotoStorage.cameraUri(context); cameraUri = uri.toString(); camera.launch(uri) }
+        catch (_: Exception) { message = "Kamera belum tersedia di perangkat ini." }
+    }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) launchCamera() else message = "Izin kamera ditolak. Anda masih dapat memilih foto dari perangkat."
     }
     val selectedCategory = if (category == "Lainnya") customCategory.trim() else category
     val cost = buy.toIntOrNull()
@@ -182,7 +250,7 @@ internal fun AddProductScreen(ownerId: String, productId: String? = null, onBack
         }
     }
 
-    DemoPage(if (productId == null) "Tambah Barang" else "Edit Barang", "Data disimpan di perangkat", onBack) {
+    DemoPage(if (productId == null) "Tambah Barang" else "Edit Barang", "Data disimpan di perangkat", onBack, badgeText = "DATA LOKAL") {
         DemoCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ProductPhoto(previewProduct, Modifier.size(72.dp).background(Background, RoundedCornerShape(10.dp)))
@@ -193,7 +261,8 @@ internal fun AddProductScreen(ownerId: String, productId: String? = null, onBack
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { gallery.launch("image/*") }, enabled = !busy, modifier = Modifier.weight(1f), contentPadding = PaddingValues(4.dp)) { Text("Pilih foto", fontSize = 12.sp) }
                 OutlinedButton(onClick = {
-                    try { val uri = ProductPhotoStorage.cameraUri(context); cameraUri = uri.toString(); camera.launch(uri) } catch (_: Exception) { message = "Kamera belum tersedia di perangkat ini." }
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) launchCamera()
+                    else cameraPermission.launch(Manifest.permission.CAMERA)
                 }, enabled = !busy, modifier = Modifier.weight(1f), contentPadding = PaddingValues(4.dp)) { Text("Ambil foto", fontSize = 12.sp) }
             }
             if (photo != null) TextButton(onClick = { if (photo != originalPhoto) ProductPhotoStorage.delete(context, photo); photo = null }, enabled = !busy) { Text("Hapus foto") }
@@ -201,7 +270,10 @@ internal fun AddProductScreen(ownerId: String, productId: String? = null, onBack
         SectionGap(); GroupTitle("Detail barang")
         DemoCard {
             FormField("Nama barang *", name, { name = it.take(80) }, "Contoh: Minyak Kita 1L")
-            Spacer(Modifier.height(10.dp)); FormField("Barcode (opsional)", barcode, { barcode = it.take(80) })
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(value = barcode, onValueChange = { barcode = it.take(80) }, modifier = Modifier.fillMaxWidth(),
+                label = { Text("Barcode (opsional)") }, singleLine = true, shape = RoundedCornerShape(10.dp),
+                trailingIcon = { IconButton(onClick = scanBarcode, enabled = !busy && !loading) { Icon(Icons.Default.QrCodeScanner, "Pindai barcode barang") } })
             Spacer(Modifier.height(12.dp)); Text("Kategori", fontSize = 12.sp, color = Muted)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("Sembako", "Minuman", "Makanan", "Rokok", "Lainnya").forEach { FilterChip(selected = category == it, onClick = { category = it }, label = { Text(it, fontSize = 11.sp) }) }
@@ -220,7 +292,7 @@ internal fun AddProductScreen(ownerId: String, productId: String? = null, onBack
         SectionGap(); GroupTitle("Stok & satuan")
         DemoCard {
             if (productId == null) FormField("Stok awal (pcs)", stock, { stock = it.filter { c -> c in '0'..'9' }.take(8) }, "0", true)
-            else Text("Stok saat ini: $stock pcs • perubahan stok melalui kulakan/koreksi nanti.", fontSize = 12.sp, color = Muted)
+            else Text("Stok saat ini: $stock pcs • penambahan stok melalui daftar Barang.", fontSize = 12.sp, color = Muted)
             Spacer(Modifier.height(10.dp)); FormField("Batas stok minimum (pcs)", minimum, { minimum = it.filter { c -> c in '0'..'9' }.take(8) }, "0", true)
             Spacer(Modifier.height(10.dp)); DemoNote(if (productId == null) "Stok awal tidak otomatis dicatat sebagai kulakan atau kas keluar." else "Edit harga tidak mengubah penjualan sebelumnya.")
         }

@@ -50,3 +50,13 @@ fun calculateCartTotals(products: List<Product>, quantities: Map<String, Int>): 
     }
     return CartTotals(total.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), gross?.takeIf { it in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() }?.toInt(), total > Int.MAX_VALUE)
 }
+
+/** Scans use exact barcode matching; typed queries also support partial names and codes. */
+internal fun Product.matchesSearch(query: String, exactBarcode: Boolean = false): Boolean {
+    val search = query.trim()
+    if (search.isEmpty()) return !exactBarcode
+    return if (exactBarcode) barcode == search
+    else name.contains(search, ignoreCase = true) || barcode?.contains(search, ignoreCase = true) == true
+}
+
+internal fun Product.needsRestock(): Boolean = active && stock <= minimumStock

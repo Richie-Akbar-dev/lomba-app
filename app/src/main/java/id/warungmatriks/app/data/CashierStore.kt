@@ -8,13 +8,14 @@ import kotlinx.coroutines.withContext
 
 internal class InsufficientStockException : Exception()
 internal class ProductChangedException : Exception()
+internal class StockAdditionException : Exception()
 internal data class LocalReceivable(val customer: String, val remaining: Int)
 internal data class CashierLine(val product: Product, val quantity: Int)
 internal data class CheckoutResult(val total: Int, val received: Int, val change: Int, val debt: Int, val customer: String?)
 
 /** One per-account local catalogue, stock and prototype transaction store. */
 internal class CashierStore(context: Context, private val ownerId: String, databaseName: String = "cashier_prototype.db") :
-    SQLiteOpenHelper(context.applicationContext, databaseName, null, 3) {
+    SQLiteOpenHelper(context.applicationContext, databaseName, null, 4) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE stock (owner_id TEXT NOT NULL, product_id TEXT NOT NULL, quantity INTEGER NOT NULL CHECK(quantity >= 0), PRIMARY KEY(owner_id, product_id))")
         db.execSQL("CREATE TABLE sales (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, created_at INTEGER NOT NULL, total INTEGER NOT NULL, received INTEGER NOT NULL, change_amount INTEGER NOT NULL, debt INTEGER NOT NULL, customer TEXT, payment_method TEXT NOT NULL DEFAULT 'cash')")
@@ -22,6 +23,11 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         db.execSQL("CREATE TABLE cash_movements (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, amount INTEGER NOT NULL)")
         db.execSQL("CREATE TABLE receivables (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, customer TEXT NOT NULL, amount_remaining INTEGER NOT NULL)")
         createProducts(db)
+        createStockAdditions(db)
+    }
+
+    private fun createStockAdditions(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE stock_additions (owner_id TEXT NOT NULL, id TEXT NOT NULL, product_id TEXT NOT NULL, quantity INTEGER NOT NULL CHECK(quantity > 0), before_quantity INTEGER NOT NULL, after_quantity INTEGER NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(owner_id,id))")
     }
 
     private fun createSaleItems(db: SQLiteDatabase) {
@@ -41,6 +47,7 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
             db.execSQL("DROP TABLE sale_items_v1")
         }
         if (oldVersion < 3) db.execSQL("ALTER TABLE sales ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'cash'")
+        if (oldVersion < 4) createStockAdditions(db)
     }
 
     private fun seed(db: SQLiteDatabase) {
@@ -101,6 +108,35 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
             update.bindLong(1, if (active) 1L else 0L); update.bindString(2, ownerId); update.bindString(3, id)
             check(update.executeUpdateDelete() == 1) { "Barang tidak ditemukan." }
         } finally { update.close() }
+    }
+
+    /** Add stock atomically and idempotently; this is not a purchase or cash expense. */
+    suspend fun addStock(id: String, productId: String, quantity: Int): Int = withContext(Dispatchers.IO) {
+        require(id.isNotBlank() && productId.isNotBlank() && quantity > 0)
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.rawQuery("SELECT product_id,quantity,after_quantity FROM stock_additions WHERE owner_id=? AND id=?", arrayOf(ownerId, id)).use { c ->
+                if (c.moveToFirst()) {
+                    require(c.getString(0) == productId && c.getInt(1) == quantity) { "ID penyesuaian sudah dipakai." }
+                    val previousResult = c.getInt(2)
+                    db.setTransactionSuccessful()
+                    return@withContext previousResult
+                }
+            }
+            val update = db.compileStatement("UPDATE stock SET quantity=quantity+? WHERE owner_id=? AND product_id=? AND quantity<=?")
+            try {
+                update.bindLong(1, quantity.toLong()); update.bindString(2, ownerId); update.bindString(3, productId)
+                update.bindLong(4, Int.MAX_VALUE.toLong() - quantity.toLong())
+                if (update.executeUpdateDelete() != 1) throw StockAdditionException()
+            } finally { update.close() }
+            val after = db.rawQuery("SELECT quantity FROM stock WHERE owner_id=? AND product_id=?", arrayOf(ownerId, productId)).use { c ->
+                check(c.moveToFirst()); c.getInt(0)
+            }
+            db.execSQL("INSERT INTO stock_additions(owner_id,id,product_id,quantity,before_quantity,after_quantity,created_at) VALUES(?,?,?,?,?,?,?)", arrayOf(ownerId,id,productId,quantity,after-quantity,after,System.currentTimeMillis()))
+            db.setTransactionSuccessful()
+            after
+        } finally { db.endTransaction() }
     }
 
     suspend fun stocks(): Map<String, Int> = products().associate { it.id to it.stock }

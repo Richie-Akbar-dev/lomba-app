@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.sp
 import id.warungmatriks.app.ui.theme.*
 
 @Composable
-internal fun DemoPage(title: String, subtitle: String = "Warung Matriks • Data demo", onBack: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
+internal fun DemoPage(title: String, subtitle: String = "Warung Matriks • Data demo", onBack: (() -> Unit)? = null, badgeText: String = "DEMO", content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxSize().background(Background).verticalScroll(rememberScrollState()).padding(horizontal = 18.dp)) {
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -32,7 +32,7 @@ internal fun DemoPage(title: String, subtitle: String = "Warung Matriks • Data
                 Text(subtitle, fontSize = 12.sp, color = Muted)
             }
             Surface(color = PaleBlue, shape = RoundedCornerShape(50)) {
-                Text("DEMO", Modifier.padding(horizontal = 9.dp, vertical = 5.dp), fontSize = 10.sp, color = Blue, fontWeight = FontWeight.Bold)
+                Text(badgeText, Modifier.padding(horizontal = 9.dp, vertical = 5.dp), fontSize = 10.sp, color = Blue, fontWeight = FontWeight.Bold)
             }
         }
         Spacer(Modifier.height(20.dp))
