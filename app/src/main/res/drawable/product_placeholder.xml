@@ -1,0 +1,11 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <!-- Universal package icon used only when a product has no image. -->
+    <path android:fillColor="#38BDF8" android:pathData="M18,30 L48,15 L78,30 L48,45 Z"/>
+    <path android:fillColor="#2563EB" android:pathData="M18,34 L45,47.5 L45,79 L18,65.5 Z"/>
+    <path android:fillColor="#2563EB" android:fillAlpha="0.75" android:pathData="M51,47.5 L78,34 L78,65.5 L51,79 Z"/>
+    <path android:fillColor="#FFFFFF" android:fillAlpha="0.85" android:pathData="M44,21 L51,17.5 L66,25 L59,28.5 Z"/>
+</vector>

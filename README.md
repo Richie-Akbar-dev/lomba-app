@@ -7,7 +7,7 @@ Aplikasi Android native berbasis Kotlin, Jetpack Compose dan Material 3. Tampila
 1. Buka folder yang berisi `settings.gradle.kts` di Android Studio.
 2. Gunakan JDK 17 dan Android SDK Platform 34. Jalankan Gradle Sync dan instal komponen yang diminta.
 3. Pilih konfigurasi `app` dan emulator/perangkat Android 7.0 (API 24) atau lebih baru. Untuk login Google, gunakan perangkat atau emulator yang memiliki Google Play services dan koneksi internet.
-4. Terminal: `./gradlew assembleDebug` (Windows `gradlew.bat assembleDebug`); unit test: `./gradlew testDebugUnitTest`.
+4. Terminal: `./gradlew assembleDebug` (Windows `gradlew.bat assembleDebug`); unit test: `./gradlew testDebugUnitTest`. Pada emulator/perangkat: `./gradlew connectedDebugAndroidTest` untuk pengujian database lokal.
 
 Tanpa konfigurasi Google/Firebase di bawah, proyek tetap dapat disinkronkan dan dibuka, tetapi layar masuk menampilkan pemberitahuan dan tombol login dinonaktifkan; aplikasi tidak membuat sesi palsu.
 
@@ -40,7 +40,7 @@ WM_GOOGLE_WEB_CLIENT_ID=ISI_WEB_CLIENT_ID
 
 6. Gradle Sync dan rebuild. Login Google harus diuji pada perangkat/emulator dengan Google Play services. Jika gagal, periksa koneksi, aktivasi Google provider, package, SHA-1, OAuth consent/client, dan kecocokan nilai Firebase. Kesalahan hanya ditampilkan sebagai pesan umum; token tidak dicetak di log aplikasi.
 
-Karena nilai `local.properties` tidak ikut Git, setiap lingkungan build harus mengonfigurasikannya sendiri. Konfigurasi klien bukan pengganti aturan keamanan server. Firebase Authentication memverifikasi token Google secara online; tidak ada server atau database untuk data warung pada tahap ini.
+Karena nilai `local.properties` tidak ikut Git, setiap lingkungan build harus mengonfigurasikannya sendiri. Konfigurasi klien bukan pengganti aturan keamanan server. Firebase Authentication memverifikasi token Google secara online; belum ada server atau database cloud untuk data warung pada tahap ini.
 
 ## Cara memeriksa alur
 
@@ -57,12 +57,16 @@ Cari Preview di file `ui/SplashScreen.kt`, `ui/AuthScreens.kt`, `ui/WarungMatrik
 
 ## Batasan fitur lain
 
-Data produk, keranjang, kas, kasbon, dan laporan tetap **demo**. Contoh keranjang menghasilkan total Rp29.500 dan laba kotor Rp6.000, sebelum biaya operasional. Belum ada database transaksi, pembaruan stok, kontrol akses, QRIS, notifikasi, sinkronisasi, backup, printer atau ekspor. Pembayaran tunai hanya simulasi dan data keranjang dapat hilang saat Activity dibuat ulang. Harga modal dan laba yang tampak pada demo tidak dilindungi hak akses. Jangan memasukkan data keuangan nyata.
+Katalog masih menggunakan **barang dan harga demo**. Barang tanpa gambar memakai ikon paket lokal; logo Warung Matriks tidak diubah. Pada Dashboard Kasir, pembayaran tunai (termasuk Rp0) menyimpan transaksi, stok, penerimaan tunai dan sisa kasbon ke database SQLite lokal dalam satu transaksi. Nama pelanggan wajib untuk sisa kasbon. Catatan kasbon lokal dapat dilihat di bagian bawah Dashboard Kasir; **halaman Pesanan, Barang, Kas, Kasbon dan Laporan lain belum terhubung dan masih menampilkan data demo**. Pelunasan kasbon, saldo laci nyata, manajemen barang dan laporan nyata belum tersedia. Keranjang belum disimpan saat Activity dibuat ulang.
+
+Tombol QRIS menampilkan QR nominal secara offline setelah pengguna memasukkan teks payload QRIS statis toko. Input hanya tersimpan di memori selama sesi, tidak disimpan/dikirim; import foto belum tersedia. Pembentukan QR bukan bukti pembayaran dan tidak membuat catatan transaksi, tidak ada konfirmasi otomatis atau manual. Implementasi hanya menerima payload ASCII tertentu dan memerlukan validasi terhadap penyedia QRIS; belum diuji dengan merchant sesungguhnya. Jangan gunakan QR ini atau aplikasi ini untuk pembayaran dan pembukuan nyata sebelum build, pengujian dan integrasi tuntas.
+
+Belum ada kontrol akses, notifikasi, sinkronisasi, backup, printer atau ekspor. SQLite dan profil hanya ada di perangkat dan dapat hilang jika data aplikasi dihapus atau perangkat rusak. Login offline tidak memvalidasi pencabutan sesi terhadap server. Pengujian unit Settlement/QRIS dan pengujian database Android ada di proyek, namun tetap harus dijalankan di Android Studio/emulator.
 
 ## Struktur
 
 - `auth/` — integrasi Credential Manager/Firebase dan profil warung lokal.
-- `data/` — model serta data produk demo.
+- `data/` — data demo, penyimpanan kasir lokal, perhitungan tunai dan pembentukan payload QRIS.
 - `ui/` — alur autentikasi, layar, komponen dan Compose Preview.
 - `ui/theme/` dan `res/drawable/` — tema, logo dan ilustrasi lokal.
 - `app/src/test/` — contoh unit test perhitungan.

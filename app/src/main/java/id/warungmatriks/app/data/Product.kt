@@ -11,8 +11,12 @@ data class Product(
     val price: Int,
     val cost: Int,
     val stock: Int,
-    @DrawableRes val image: Int,
-)
+    @DrawableRes val image: Int? = null,
+) {
+    // Local drawable IDs only; a missing image uses a universal package icon.
+    @get:DrawableRes
+    val imageResource: Int get() = image?.takeIf { it != 0 } ?: R.drawable.product_placeholder
+}
 
 object DemoData {
     val products = listOf(

@@ -43,7 +43,7 @@ internal fun InventoryScreen(onAdd: () -> Unit) {
         list.forEach { product ->
             DemoCard {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Image(painterResource(product.image), null, modifier = Modifier.size(60.dp).background(Background, RoundedCornerShape(10.dp)))
+                    Image(painterResource(product.imageResource), null, modifier = Modifier.size(60.dp).background(Background, RoundedCornerShape(10.dp)))
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(product.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)

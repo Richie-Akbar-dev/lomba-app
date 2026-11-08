@@ -23,6 +23,7 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "FIREBASE_API_KEY", configLiteral("WM_FIREBASE_API_KEY"))
         buildConfigField("String", "FIREBASE_APP_ID", configLiteral("WM_FIREBASE_APP_ID"))
         buildConfigField("String", "FIREBASE_PROJECT_ID", configLiteral("WM_FIREBASE_PROJECT_ID"))
@@ -48,6 +49,7 @@ dependencies {
     implementation(composeBom)
     androidTestImplementation(composeBom)
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("com.google.zxing:core:3.5.3")
     implementation("androidx.activity:activity-compose:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
@@ -61,6 +63,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
     testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test:runner:1.6.1")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
