@@ -238,7 +238,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
                 Text("Tampilkan QRIS", fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
         }
-        Text("Data tunai disimpan lokal; halaman pesanan, kas dan laporan belum terhubung.", modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp, bottom = 16.dp), color = Muted, fontSize = 11.sp)
+        Text("Penjualan tunai tersimpan lokal dan tampil di Pesanan; kas dan laporan masih demo.", modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp, bottom = 16.dp), color = Muted, fontSize = 11.sp)
         if (state.receivables.isNotEmpty()) {
             SectionHeading("Kasbon lokal", "${state.receivables.size} catatan")
             Spacer(Modifier.height(8.dp))
@@ -264,7 +264,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
                     OutlinedTextField(value = state.customer, onValueChange = { state.customer = it.take(80) }, label = { Text("Nama pelanggan (wajib)") }, singleLine = true)
                 }
                 Spacer(Modifier.height(8.dp))
-                DemoNote("Simpan lokal saja. Pesanan, kas dan halaman kasbon lain masih menampilkan data demo.")
+                DemoNote("Simpan lokal saja. Riwayat tersedia di Pesanan; kas dan halaman kasbon masih demo.")
             } },
             confirmButton = { TextButton(enabled = !state.processing && (debt == 0 || state.customer.isNotBlank()), onClick = {
                 val lines = items.map { CashierLine(it, quantities[it.id] ?: 0) }
@@ -307,7 +307,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
         AlertDialog(
             onDismissRequest = { state.receipt = null },
             title = { Text("Tersimpan di perangkat") },
-            text = { Text("Total: ${rupiah(result.total)}\nTunai diterima: ${rupiah(result.received)}\nKembalian: ${rupiah(result.change)}\nSisa kasbon: ${rupiah(result.debt)}" + (result.customer?.let { "\nPelanggan: $it" } ?: "") + "\n\nPrototipe: data tersimpan lokal; halaman lain belum terhubung.") },
+            text = { Text("Total: ${rupiah(result.total)}\nTunai diterima: ${rupiah(result.received)}\nKembalian: ${rupiah(result.change)}\nSisa kasbon: ${rupiah(result.debt)}" + (result.customer?.let { "\nPelanggan: $it" } ?: "") + "\n\nPrototipe: riwayat tersedia di Pesanan; kas dan laporan masih demo.") },
             confirmButton = { TextButton(onClick = { state.receipt = null }) { Text("Selesai") } },
         )
     }

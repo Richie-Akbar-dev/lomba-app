@@ -112,6 +112,49 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         result
     }
 
+    /** Reads only this owner's immutable transaction snapshots; filters describe the original payment. */
+    suspend fun saleHistory(
+        start: Long?, end: Long?, filter: SaleHistoryFilter, after: SaleCursor? = null, limit: Int = 25,
+    ): SaleHistoryPage = withContext(Dispatchers.IO) {
+        require(limit in 1..100)
+        require((start == null && end == null) || (start != null && end != null && start < end))
+        val conditions = mutableListOf("owner_id = ?")
+        val args = mutableListOf(ownerId)
+        if (start != null && end != null) { conditions += "created_at >= ? AND created_at < ?"; args += start.toString(); args += end.toString() }
+        when (filter) {
+            SaleHistoryFilter.ALL -> Unit
+            SaleHistoryFilter.PAID_AT_SALE -> conditions += "debt = 0"
+            SaleHistoryFilter.CREDIT_AT_SALE -> conditions += "debt > 0"
+        }
+        if (after != null) {
+            conditions += "(created_at < ? OR (created_at = ? AND id < ?))"
+            args += after.createdAt.toString(); args += after.createdAt.toString(); args += after.id
+        }
+        args += (limit + 1).toString()
+        val records = mutableListOf<SaleRecord>()
+        readableDatabase.rawQuery("SELECT id,created_at,total,received,change_amount,debt,customer FROM sales WHERE ${conditions.joinToString(" AND ")} ORDER BY created_at DESC,id DESC LIMIT ?", args.toTypedArray()).use { c ->
+            while (c.moveToNext()) records += SaleRecord(c.getString(0), c.getLong(1), c.getInt(2), c.getInt(3), c.getInt(4), c.getInt(5), c.getString(6))
+        }
+        val page = records.take(limit)
+        SaleHistoryPage(page, if (records.size > limit) page.last().let { SaleCursor(it.createdAt, it.id) } else null)
+    }
+
+    suspend fun saleHistorySummary(start: Long, end: Long): SaleHistorySummary = withContext(Dispatchers.IO) {
+        require(start < end)
+        readableDatabase.rawQuery("SELECT COUNT(*), COALESCE(SUM(total),0), COALESCE(SUM(received-change_amount),0), COALESCE(SUM(debt),0) FROM sales WHERE owner_id=? AND created_at>=? AND created_at<?", arrayOf(ownerId, start.toString(), end.toString())).use { c ->
+            check(c.moveToFirst())
+            SaleHistorySummary(c.getLong(0), c.getLong(1), c.getLong(2), c.getLong(3))
+        }
+    }
+
+    suspend fun saleItemSnapshots(saleId: String): List<SaleItemSnapshot> = withContext(Dispatchers.IO) {
+        val items = mutableListOf<SaleItemSnapshot>()
+        readableDatabase.rawQuery("SELECT i.product_name,i.quantity,i.price,i.cost FROM sale_items i JOIN sales s ON s.id=i.sale_id WHERE s.owner_id=? AND s.id=? ORDER BY i.rowid", arrayOf(ownerId, saleId)).use { c ->
+            while (c.moveToNext()) items += SaleItemSnapshot(c.getString(0), c.getInt(1), c.getInt(2), if (c.isNull(3)) null else c.getInt(3))
+        }
+        items
+    }
+
     suspend fun checkout(id: String, lines: List<CashierLine>, received: Int, customer: String): CheckoutResult = withContext(Dispatchers.IO) {
         require(lines.isNotEmpty() && received >= 0 && lines.all { it.quantity > 0 })
         require(lines.map { it.product.id }.distinct().size == lines.size)

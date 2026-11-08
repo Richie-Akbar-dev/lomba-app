@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNull
 import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -67,7 +68,7 @@ class CashierStoreTest {
             val product = Product("item-1", "Sabun", 5000, null, 4, category = "Sembako", minimumStock = 1)
             store.saveProduct(product)
             val saved = store.products().first { it.id == product.id }
-            assertEquals(null, saved.cost)
+            assertNull(saved.cost)
             assertEquals(4, saved.stock)
             store.checkout(UUID.randomUUID().toString(), listOf(CashierLine(saved, 1)), 5000, "")
             assertEquals(3, store.stocks().getValue(product.id))
@@ -87,12 +88,18 @@ class CashierStoreTest {
             db.execSQL("CREATE TABLE cash_movements (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, amount INTEGER NOT NULL)")
             db.execSQL("CREATE TABLE receivables (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, customer TEXT NOT NULL, amount_remaining INTEGER NOT NULL)")
             db.execSQL("INSERT INTO stock VALUES ('owner','indomie',3)")
+            db.execSQL("INSERT INTO sales VALUES ('old','owner',123,10500,4000,0,6500,'Bu RT')")
             db.execSQL("INSERT INTO sale_items VALUES ('old','indomie','Indomie Goreng',3,3500,2700)")
+            db.execSQL("INSERT INTO cash_movements VALUES ('old','owner',4000)")
+            db.execSQL("INSERT INTO receivables VALUES ('old','owner','Bu RT',6500)")
             db.version = 1
         } finally { db.close() }
         val store = CashierStore(context, "owner", dbName)
         try {
             assertEquals(3, store.stocks().getValue("indomie"))
+            assertEquals("old", store.saleHistory(null, null, SaleHistoryFilter.ALL).sales.single().id)
+            assertEquals(6500, store.receivables().single().remaining)
+            assertEquals("Indomie Goreng", store.saleItemSnapshots("old").single().productName)
             store.readableDatabase.rawQuery("SELECT price,cost FROM sale_items WHERE sale_id='old'", null).use {
                 assertTrue(it.moveToFirst()); assertEquals(3500, it.getInt(0)); assertEquals(2700, it.getInt(1))
             }
@@ -122,6 +129,38 @@ class CashierStoreTest {
             store.setProductActive(product.id, true)
             assertTrue(store.products().first { it.id == product.id }.active)
         } finally { store.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun historyIsScopedPaginatedAndUsesOriginalSnapshots() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "history-" + UUID.randomUUID() + ".db"
+        val owner = CashierStore(context, "owner", dbName)
+        val other = CashierStore(context, "other", dbName)
+        try {
+            val product = Product("item", "Sabun lama", 5000, 3000, 5)
+            owner.saveProduct(product); other.saveProduct(product)
+            owner.checkout("owner-a", listOf(CashierLine(product, 1)), 10000, "")
+            owner.checkout("owner-b", listOf(CashierLine(product, 1)), 0, "Bu RT")
+            other.checkout("other-a", listOf(CashierLine(product, 1)), 5000, "")
+            owner.writableDatabase.execSQL("UPDATE sales SET created_at=1000")
+            owner.updateProduct(product.copy(name = "Sabun baru", price = 6000, cost = 4000))
+            owner.setProductActive(product.id, false)
+
+            val first = owner.saleHistory(1000, 1001, SaleHistoryFilter.ALL, limit = 1)
+            assertEquals(listOf("owner-b"), first.sales.map { it.id })
+            assertTrue(first.next != null)
+            val second = owner.saleHistory(1000, 1001, SaleHistoryFilter.ALL, first.next, 1)
+            assertEquals(listOf("owner-a"), second.sales.map { it.id })
+            assertNull(second.next)
+            assertEquals(listOf("owner-a"), owner.saleHistory(null, null, SaleHistoryFilter.PAID_AT_SALE).sales.map { it.id })
+            assertEquals(listOf("owner-b"), owner.saleHistory(null, null, SaleHistoryFilter.CREDIT_AT_SALE).sales.map { it.id })
+            assertTrue(owner.saleHistory(1001, 2000, SaleHistoryFilter.ALL).sales.isEmpty())
+            assertEquals(SaleHistorySummary(2, 10000, 5000, 5000), owner.saleHistorySummary(1000, 1001))
+            assertEquals(5000, owner.saleHistory(null, null, SaleHistoryFilter.PAID_AT_SALE).sales.single().cashApplied)
+            assertEquals(SaleItemSnapshot("Sabun lama", 1, 5000, 3000), owner.saleItemSnapshots("owner-a").single())
+            assertTrue(other.saleItemSnapshots("owner-a").isEmpty())
+            assertEquals(listOf("other-a"), other.saleHistory(null, null, SaleHistoryFilter.ALL).sales.map { it.id })
+        } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
     }
 
 }

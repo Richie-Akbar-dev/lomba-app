@@ -15,37 +15,6 @@ import androidx.compose.ui.text.font.FontWeight
 import id.warungmatriks.app.ui.theme.*
 
 @Composable
-internal fun OrdersScreen(onCash: () -> Unit, onCredit: () -> Unit) {
-    var filter by remember { mutableStateOf("Penjualan") }
-    DemoPage("Pesanan", "Riwayat penjualan & kulakan • demo") {
-        GroupTitle("Arus kas hari ini", "Angka ilustrasi, bukan transaksi yang tersimpan")
-        SummaryCard("Modal awal", "Rp500.000", "Shift pagi • uang awal laci", Icons.Default.AccountBalanceWallet)
-        Spacer(Modifier.height(9.dp))
-        SummaryCard("Belanja modal", "Rp386.000", "Contoh pengeluaran tunai", Icons.Default.ShoppingBasket)
-        Spacer(Modifier.height(9.dp))
-        SummaryCard("Kas di laci", "Rp1.450.000", "Contoh uang fisik • lihat rincian kas", Icons.Default.PointOfSale)
-        TextButton(onClick = onCash) { Text("Lihat kas masuk & keluar →") }
-        SectionGap()
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            listOf("Penjualan", "Kulakan").forEach { item ->
-                FilterChip(selected = filter == item, onClick = { filter = item }, label = { Text(item) }, modifier = Modifier.weight(1f))
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        if (filter == "Penjualan") {
-            TransactionCard("Kasir #TRX-042", "Bu RT • Tunai", "+Rp29.500", "3× Indomie Goreng  •  1× Le Minerale\n1× Telur Ayam 1/2 Kg", "Laba kotor Rp6.000")
-            Spacer(Modifier.height(10.dp))
-            TransactionCard("Kasbon #TRX-040", "Mas Doni • Belum lunas", "Rp19.500", "Sisa piutang contoh", "Kasbon bukan uang di laci")
-            TextButton(onClick = onCredit) { Text("Buka buku kasbon →") }
-        } else {
-            TransactionCard("Kulakan modal", "Agen Barokah Jaya • Tunai", "-Rp386.000", "2 dus Indomie Goreng  •  Rp216.000\n1 karton Minyak Kita  •  Rp170.000", "Restok contoh")
-        }
-        SectionGap()
-        DemoNote()
-    }
-}
-
-@Composable
 private fun SummaryCard(title: String, value: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
     DemoCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -53,20 +22,6 @@ private fun SummaryCard(title: String, value: String, subtitle: String, icon: an
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) { Text(title, fontSize = 13.sp, color = Muted); Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Ink); Text(subtitle, fontSize = 11.sp, color = Muted) }
         }
-    }
-}
-
-@Composable
-private fun TransactionCard(title: String, subtitle: String, amount: String, details: String, extra: String) {
-    DemoCard {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold); Text(subtitle, fontSize = 12.sp, color = Muted) }
-            Text(amount, fontSize = 15.sp, color = Blue, fontWeight = FontWeight.Bold)
-        }
-        HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Line)
-        Text(details, fontSize = 13.sp, lineHeight = 20.sp)
-        Spacer(Modifier.height(8.dp))
-        Text(extra, color = Muted, fontSize = 12.sp)
     }
 }
 
@@ -176,8 +131,6 @@ private fun NotificationCard(type: String, title: String, detail: String, icon: 
     }
 }
 
-@Preview(showBackground = true, widthDp = 360, heightDp = 800)
-@Composable private fun OrdersPreview() { WarungMatriksTheme { OrdersScreen({}, {}) } }
 @Preview(showBackground = true, widthDp = 360, heightDp = 800)
 @Composable private fun ReportsPreview() { WarungMatriksTheme { ReportsScreen() } }
 @Preview(showBackground = true, widthDp = 360, heightDp = 800)

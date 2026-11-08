@@ -53,7 +53,7 @@ Karena nilai `local.properties` tidak ikut Git, setiap lingkungan build harus me
 
 Navigasi bawah: **Kasir, Pesanan, Barang, Laporan, Akun**. Halaman Kas, Kasbon, Tambah/Edit Barang dan Notifikasi diakses melalui halaman terkait. Daftar/masuk sekarang satu tombol Google, diikuti formulir profil lokal.
 
-Cari Preview di file `ui/SplashScreen.kt`, `ui/AuthScreens.kt`, `ui/WarungMatriksApp.kt`, `ui/OverviewScreens.kt`, `ui/InventoryScreens.kt`, dan `ui/AccountScreens.kt`. Setelah Gradle Sync, pilih **Split** atau **Design**, lalu **Build & Refresh** jika diminta.
+Cari Preview di file `ui/SplashScreen.kt`, `ui/AuthScreens.kt`, `ui/WarungMatriksApp.kt`, `ui/OverviewScreens.kt`, `ui/OrdersScreen.kt`, `ui/InventoryScreens.kt`, dan `ui/AccountScreens.kt`. Setelah Gradle Sync, pilih **Split** atau **Design**, lalu **Build & Refresh** jika diminta.
 
 ## Katalog dan kasir lokal (prototipe)
 
@@ -65,7 +65,7 @@ Cari Preview di file `ui/SplashScreen.kt`, `ui/AuthScreens.kt`, `ui/WarungMatrik
 - Tombol simpan menampilkan popup selama **50 ms (0,05 detik)** sesuai permintaan; durasi ini mungkin sulit terlihat. Keranjang belum disimpan saat Activity dibuat ulang.
 - Migrasi skema SQLite v1 ke v2 dirancang mempertahankan stok, transaksi, penerimaan tunai dan kasbon lama, sambil menambahkan katalog dan modal opsional pada rincian penjualan. Migrasi harus diuji pada perangkat dengan data lama sebelum penggunaan nyata.
 
-Pada Dashboard Kasir, pembayaran tunai (termasuk Rp0) menyimpan transaksi, stok, penerimaan tunai dan sisa kasbon secara atomik. Nama pelanggan wajib untuk kasbon. Ringkasan kasbon lokal ditampilkan di Dashboard, tetapi **halaman Pesanan, Kas, Kasbon terperinci, Laporan dan Notifikasi masih demo**, belum menampilkan transaksi sesungguhnya. Pelunasan kasbon, saldo laci nyata, kulakan dan laporan nyata belum tersedia. Angka contoh pada halaman-halaman tersebut bukan pembukuan toko.
+Pada Dashboard Kasir, pembayaran tunai (termasuk Rp0) menyimpan transaksi, stok, penerimaan tunai dan sisa kasbon secara atomik. Nama pelanggan wajib untuk kasbon. Ringkasan kasbon lokal ditampilkan di Dashboard. **Pesanan → Penjualan** membaca transaksi per akun dari SQLite, termasuk transaksi tunai sebagian atau Rp0, dan menampilkan rincian snapshot barang, total, uang diserahkan, kembalian, tunai masuk dan kasbon saat transaksi. Filter hari ini menggunakan tanggal/jam perangkat; filter lunas/kasbon dan angka kasbon menunjukkan kondisi saat transaksi, bukan saldo setelah pelunasan. Ringkasan omzet dan tunai penjualan bukan saldo laci. Laba kotor ditampilkan hanya jika modal seluruh barang diketahui. Data lama yang tersimpan dapat terlihat setelah migrasi; QRIS tidak dicatat. Daftar dimuat bertahap dan dapat dimuat ulang. Bagian **Kulakan** belum tersedia; halaman Kas, Kasbon terperinci, Laporan dan Notifikasi masih demo. Pelunasan kasbon, saldo laci nyata, kulakan dan laporan nyata belum tersedia. Angka contoh pada halaman-halaman tersebut bukan pembukuan toko.
 
 ## QRIS dan batasan
 
@@ -76,7 +76,7 @@ Belum ada sinkronisasi, backup, printer, ekspor atau pelacakan perubahan stok. S
 ## Struktur
 
 - `auth/` — integrasi Credential Manager/Firebase dan profil warung lokal.
-- `data/` — katalog dan foto lokal, penyimpanan kasir SQLite, perhitungan tunai dan pembentukan payload QRIS.
+- `data/` — katalog dan foto lokal, penyimpanan kasir SQLite, riwayat penjualan, perhitungan tunai dan pembentukan payload QRIS.
 - `ui/` — alur autentikasi, layar, komponen dan Compose Preview.
 - `ui/theme/` dan `res/drawable/` — tema, logo dan ilustrasi lokal.
 - `app/src/test/` dan `app/src/androidTest/` — tes unit dan instrumentasi database.

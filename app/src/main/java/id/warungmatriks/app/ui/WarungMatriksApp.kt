@@ -46,7 +46,7 @@ internal fun WarungMatriksApp(account: SignedInAccount, onSignOut: () -> Unit, s
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
                 Screen.KASIR -> CashierScreen(cashierState, ownerId = account.uid, cashierName = account.shop.ownerName, onNotifications = { navigate(Screen.NOTIFIKASI) }, onAccount = { navigate(Screen.AKUN) }, onCash = { navigate(Screen.KAS) }, onInventory = { navigate(Screen.BARANG) })
-                Screen.PESANAN -> OrdersScreen(onCash = { navigate(Screen.KAS) }, onCredit = { navigate(Screen.KASBON) })
+                Screen.PESANAN -> OrdersScreen(ownerId = account.uid)
                 Screen.BARANG -> InventoryScreen(ownerId = account.uid, onAdd = { editingProductId = null; navigate(Screen.TAMBAH) }, onEdit = { editingProductId = it; navigate(Screen.TAMBAH) })
                 Screen.LAPORAN -> ReportsScreen()
                 Screen.AKUN -> AccountScreen(account = account, onSignOut = onSignOut, signOutBusy = signOutBusy, signOutError = signOutError, onNotifications = { navigate(Screen.NOTIFIKASI) })
