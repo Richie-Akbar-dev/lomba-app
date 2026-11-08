@@ -35,12 +35,15 @@ import id.warungmatriks.app.data.calculateCartTotals
 import id.warungmatriks.app.data.CashierLine
 import id.warungmatriks.app.data.CashierStore
 import id.warungmatriks.app.data.CheckoutResult
+import id.warungmatriks.app.data.CashSummary
+import id.warungmatriks.app.data.cashWeek
 import id.warungmatriks.app.data.InsufficientStockException
 import id.warungmatriks.app.data.ProductChangedException
 import id.warungmatriks.app.data.LocalReceivable
 import id.warungmatriks.app.data.matchesSearch
 import id.warungmatriks.app.data.needsRestock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
 import id.warungmatriks.app.ui.theme.*
@@ -51,6 +54,7 @@ internal class CashierState {
     val catalog = mutableStateListOf<Product>()
     val receivables = mutableStateListOf<LocalReceivable>()
     var ready by mutableStateOf(false)
+    var weeklyCash by mutableStateOf<CashSummary?>(null)
     var query by mutableStateOf("")
     var exactBarcode by mutableStateOf(false)
     var cashText by mutableStateOf("")
@@ -93,6 +97,13 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
             state.receivables.clear(); state.receivables.addAll(debts); state.ready = true
         } catch (e: CancellationException) { throw e } catch (_: Exception) { state.ready = false; state.notice = "Stok lokal belum dapat dibuka. Mulai ulang aplikasi dan coba lagi." }
     }
+    LaunchedEffect(store, inspection) {
+        while (true) {
+            try { state.weeklyCash = if (inspection) CashSummary(0, 0) else store.cashSummary(cashWeek()) }
+            catch (e: CancellationException) { throw e } catch (_: Exception) { state.weeklyCash = null }
+            delay(30_000)
+        }
+    }
     val products = state.catalog.filter { it.active }
     val quantities = state.quantities
     val items = products.filter { (quantities[it.id] ?: 0) > 0 }
@@ -130,13 +141,13 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
                 Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = Blue)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Kas laci kasir", color = Muted, fontSize = 12.sp)
-                    Text("Rp1.450.000", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                    Text("Arus kas minggu ini", color = Muted, fontSize = 12.sp)
+                    Text(state.weeklyCash?.let { cashNetText(it.net) } ?: "—", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 }
-                DemoLabel("Contoh")
+                DemoLabel("Lokal")
             }
             Spacer(Modifier.height(8.dp))
-            DemoNote("Angka ilustrasi, bukan saldo yang dihitung dari transaksi.")
+            DemoNote("Kas masuk dikurangi kas keluar sejak Senin. Bukan saldo uang fisik di laci.")
             DemoAction("Lihat kas masuk / keluar", onCash)
         }
         Spacer(Modifier.height(16.dp))
@@ -252,7 +263,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
                 Text("Tampilkan QRIS", fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
         }
-        Text("Penjualan tersimpan lokal dan tampil di Pesanan; pembayaran QRIS tidak diverifikasi. Kas dan laporan masih demo.", modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp, bottom = 16.dp), color = Muted, fontSize = 11.sp)
+        Text("Penjualan dan kas tunai tersimpan lokal; pembayaran QRIS tidak diverifikasi. Laporan masih demo.", modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp, bottom = 16.dp), color = Muted, fontSize = 11.sp)
         if (state.receivables.isNotEmpty()) {
             SectionHeading("Kasbon lokal", "${state.receivables.size} catatan")
             Spacer(Modifier.height(8.dp))
@@ -291,7 +302,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
                     OutlinedTextField(value = state.customer, onValueChange = { state.customer = it.take(80) }, label = { Text("Nama pelanggan (wajib)") }, singleLine = true)
                 }
                 Spacer(Modifier.height(8.dp))
-                DemoNote("Simpan lokal saja. Riwayat tersedia di Pesanan; kas dan halaman kasbon masih demo.")
+                DemoNote("Simpan lokal saja. Riwayat tersedia di Pesanan dan kas tunai tercatat; halaman kasbon masih demo.")
             } },
             confirmButton = { TextButton(enabled = !state.processing && (debt == 0 || state.customer.isNotBlank()), onClick = {
                 val lines = items.map { CashierLine(it, quantities[it.id] ?: 0) }
@@ -310,6 +321,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
                             val freshCatalog = store.products(); val freshDebts = store.receivables()
                             state.catalog.clear(); state.catalog.addAll(freshCatalog)
                             state.receivables.clear(); state.receivables.addAll(freshDebts)
+                            state.weeklyCash = store.cashSummary(cashWeek())
                         } catch (e: CancellationException) { throw e } catch (_: Exception) { state.ready = false; state.notice = "Transaksi tersimpan, tetapi data gagal dimuat ulang. Mulai ulang aplikasi." }
                     } catch (e: CancellationException) { throw e } catch (_: InsufficientStockException) {
                         state.showCheckout = false
@@ -334,7 +346,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
         AlertDialog(
             onDismissRequest = { state.receipt = null },
             title = { Text("Tersimpan di perangkat") },
-            text = { Text("Total: ${rupiah(result.total)}\nTunai diterima: ${rupiah(result.received)}\nKembalian: ${rupiah(result.change)}\nSisa kasbon: ${rupiah(result.debt)}" + (result.customer?.let { "\nPelanggan: $it" } ?: "") + "\n\nPrototipe: riwayat tersedia di Pesanan; kas dan laporan masih demo.") },
+            text = { Text("Total: ${rupiah(result.total)}\nTunai diterima: ${rupiah(result.received)}\nKembalian: ${rupiah(result.change)}\nSisa kasbon: ${rupiah(result.debt)}" + (result.customer?.let { "\nPelanggan: $it" } ?: "") + "\n\nPrototipe: riwayat tersedia di Pesanan, dan kas tunai tercatat secara lokal.") },
             confirmButton = { TextButton(onClick = { state.receipt = null }) { Text("Selesai") } },
         )
     }

@@ -15,15 +15,20 @@ internal data class CheckoutResult(val total: Int, val received: Int, val change
 
 /** One per-account local catalogue, stock and prototype transaction store. */
 internal class CashierStore(context: Context, private val ownerId: String, databaseName: String = "cashier_prototype.db") :
-    SQLiteOpenHelper(context.applicationContext, databaseName, null, 4) {
+    SQLiteOpenHelper(context.applicationContext, databaseName, null, 5) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE stock (owner_id TEXT NOT NULL, product_id TEXT NOT NULL, quantity INTEGER NOT NULL CHECK(quantity >= 0), PRIMARY KEY(owner_id, product_id))")
         db.execSQL("CREATE TABLE sales (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, created_at INTEGER NOT NULL, total INTEGER NOT NULL, received INTEGER NOT NULL, change_amount INTEGER NOT NULL, debt INTEGER NOT NULL, customer TEXT, payment_method TEXT NOT NULL DEFAULT 'cash')")
         createSaleItems(db)
-        db.execSQL("CREATE TABLE cash_movements (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, amount INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE cash_movements (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, amount INTEGER NOT NULL, created_at INTEGER, direction TEXT NOT NULL DEFAULT 'in', category TEXT NOT NULL DEFAULT 'sale', note TEXT)")
+        createQrisRecords(db)
         db.execSQL("CREATE TABLE receivables (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, customer TEXT NOT NULL, amount_remaining INTEGER NOT NULL)")
         createProducts(db)
         createStockAdditions(db)
+    }
+
+    private fun createQrisRecords(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE qris_records (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, created_at INTEGER NOT NULL, amount INTEGER NOT NULL)")
     }
 
     private fun createStockAdditions(db: SQLiteDatabase) {
@@ -48,6 +53,16 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         }
         if (oldVersion < 3) db.execSQL("ALTER TABLE sales ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'cash'")
         if (oldVersion < 4) createStockAdditions(db)
+        if (oldVersion < 5) {
+            db.execSQL("ALTER TABLE cash_movements ADD COLUMN created_at INTEGER")
+            db.execSQL("ALTER TABLE cash_movements ADD COLUMN direction TEXT NOT NULL DEFAULT 'in'")
+            db.execSQL("ALTER TABLE cash_movements ADD COLUMN category TEXT NOT NULL DEFAULT 'sale'")
+            db.execSQL("ALTER TABLE cash_movements ADD COLUMN note TEXT")
+            // Preserve unknown dates if the corresponding sale has already expired.
+            db.execSQL("UPDATE cash_movements SET created_at=(SELECT s.created_at FROM sales s WHERE s.id=cash_movements.sale_id AND s.owner_id=cash_movements.owner_id)")
+            createQrisRecords(db)
+            db.execSQL("INSERT INTO qris_records(sale_id,owner_id,created_at,amount) SELECT id,owner_id,created_at,total FROM sales WHERE payment_method='qris'")
+        }
     }
 
     private fun seed(db: SQLiteDatabase) {
@@ -140,6 +155,45 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
     }
 
     suspend fun stocks(): Map<String, Int> = products().associate { it.id to it.stock }
+
+    suspend fun cashSummary(week: CashWeek): CashSummary = withContext(Dispatchers.IO) {
+        require(week.start < week.end)
+        readableDatabase.rawQuery("SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount ELSE 0 END),0), COALESCE(SUM(CASE WHEN direction='out' THEN amount ELSE 0 END),0) FROM cash_movements WHERE owner_id=? AND created_at>=? AND created_at<?", arrayOf(ownerId, week.start.toString(), week.end.toString())).use { c ->
+            check(c.moveToFirst()); CashSummary(c.getLong(0), c.getLong(1))
+        }
+    }
+
+    suspend fun cashMovements(direction: String, week: CashWeek?, offset: Int = 0, limit: Int = 25): CashMovementPage = withContext(Dispatchers.IO) {
+        require(direction in setOf("in", "out") && offset >= 0 && limit in 1..100)
+        val condition = if (week == null) "" else " AND created_at>=? AND created_at<?"
+        val args = mutableListOf(ownerId, direction)
+        if (week != null) { require(week.start < week.end); args += week.start.toString(); args += week.end.toString() }
+        args += (limit + 1).toString(); args += offset.toString()
+        val items = mutableListOf<CashMovement>()
+        readableDatabase.rawQuery("SELECT sale_id,created_at,direction,category,amount,note FROM cash_movements WHERE owner_id=? AND direction=?$condition ORDER BY created_at IS NULL,created_at DESC,sale_id DESC LIMIT ? OFFSET ?", args.toTypedArray()).use { c ->
+            while (c.moveToNext()) items += CashMovement(c.getString(0), if (c.isNull(1)) null else c.getLong(1), c.getString(2), c.getString(3), c.getInt(4), c.getString(5))
+        }
+        CashMovementPage(items.take(limit), items.size > limit)
+    }
+
+    /** Manual entries represent actual cash movement; changing denominations is not an entry. */
+    suspend fun addManualCash(id: String, direction: String, category: String, amount: Int, note: String) = withContext(Dispatchers.IO) {
+        require(id.isNotBlank() && amount > 0 && note.length <= 120)
+        require((direction == "in" && category in setOf("initial", "deposit")) || (direction == "out" && category in setOf("purchase", "withdrawal", "other")))
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.rawQuery("SELECT owner_id,direction,category,amount,note FROM cash_movements WHERE sale_id=?", arrayOf(id)).use { c ->
+                if (c.moveToFirst()) {
+                    require(c.getString(0) == ownerId && c.getString(1) == direction && c.getString(2) == category && c.getInt(3) == amount && (c.getString(4) ?: "") == note.trim()) { "ID catatan sudah digunakan." }
+                    db.setTransactionSuccessful()
+                    return@withContext
+                }
+            }
+            db.execSQL("INSERT INTO cash_movements(sale_id,owner_id,amount,created_at,direction,category,note) VALUES(?,?,?,?,?,?,?)", arrayOf(id,ownerId,amount,System.currentTimeMillis(),direction,category,note.trim().ifEmpty { null }))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
 
     suspend fun receivables(): List<LocalReceivable> = withContext(Dispatchers.IO) {
         val result = mutableListOf<LocalReceivable>()
@@ -237,11 +291,13 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
                     if (update.executeUpdateDelete() != 1) throw InsufficientStockException()
                 } finally { update.close() }
             }
-            db.execSQL("INSERT INTO sales (id, owner_id, created_at, total, received, change_amount, debt, customer, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", arrayOf(id, ownerId, System.currentTimeMillis(), total, received, change, debt, if (debt > 0) name else null, method))
+            val createdAt = System.currentTimeMillis()
+            db.execSQL("INSERT INTO sales (id, owner_id, created_at, total, received, change_amount, debt, customer, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", arrayOf(id, ownerId, createdAt, total, received, change, debt, if (debt > 0) name else null, method))
             lines.forEach { line ->
                 db.execSQL("INSERT INTO sale_items (sale_id, product_id, product_name, quantity, price, cost) VALUES (?, ?, ?, ?, ?, ?)", arrayOf(id, line.product.id, line.product.name, line.quantity, line.product.price, line.product.cost))
             }
-            if (received > 0) db.execSQL("INSERT INTO cash_movements (sale_id, owner_id, amount) VALUES (?, ?, ?)", arrayOf(id, ownerId, settlement.paid))
+            if (received > 0) db.execSQL("INSERT INTO cash_movements (sale_id, owner_id, amount, created_at, direction, category) VALUES (?, ?, ?, ?, 'in', 'sale')", arrayOf(id, ownerId, settlement.paid, createdAt))
+            if (method == "qris") db.execSQL("INSERT INTO qris_records (sale_id, owner_id, created_at, amount) VALUES (?, ?, ?, ?)", arrayOf(id, ownerId, createdAt, total))
             if (debt > 0) db.execSQL("INSERT INTO receivables (sale_id, owner_id, customer, amount_remaining) VALUES (?, ?, ?, ?)", arrayOf(id, ownerId, name, debt))
             db.setTransactionSuccessful()
             CheckoutResult(total, received, change, debt, if (debt > 0) name else null)

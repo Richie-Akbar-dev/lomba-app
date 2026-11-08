@@ -51,7 +51,7 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
         }
         if (signOutBusy) Text("Sedang keluar...", color = Muted, fontSize = 12.sp)
         signOutError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
-        Spacer(Modifier.height(16.dp)); DemoNote("Profil warung disimpan di perangkat. Fitur kasir dan keuangan masih berupa demo.")
+        Spacer(Modifier.height(16.dp)); DemoNote("Profil, kasir, dan kas disimpan di perangkat sebagai prototipe. Laporan dan beberapa fitur keuangan masih demo.")
     }
     info?.let { text -> DemoDialog("Informasi demo", text) { info = null } }
     if (binary) BinaryDialog(onClose = { binary = false })

@@ -68,43 +68,6 @@ internal fun ReportsScreen() {
 }
 
 @Composable
-internal fun CashLedgerScreen(onBack: () -> Unit) {
-    var showIn by remember { mutableStateOf(false) }
-    var showOut by remember { mutableStateOf(false) }
-    DemoPage("Kas masuk & keluar", "Kas laci kasir • contoh", onBack) {
-        SummaryCard("Saldo kas di laci", "Rp1.450.000", "Saldo ilustrasi sejak 06:30", Icons.Default.AccountBalanceWallet)
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Surface(Modifier.weight(1f), shape = RoundedCornerShape(14.dp), color = PaleBlue) { Column(Modifier.padding(14.dp)) { Text("Kas masuk", color = Muted, fontSize = 12.sp); Text("+Rp1.836.000", color = Blue, fontSize = 14.sp, fontWeight = FontWeight.Bold) } }
-            Surface(Modifier.weight(1f), shape = RoundedCornerShape(14.dp), color = Background) { Column(Modifier.padding(14.dp)) { Text("Kas keluar", color = Muted, fontSize = 12.sp); Text("-Rp386.000", color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold) } }
-        }
-        SectionGap(); GroupTitle("Riwayat uang masuk", "+Rp1.836.000 • contoh")
-        DemoCard {
-            LedgerLine("Modal awal kasir", "06:30 • Laci", "+Rp500.000")
-            LedgerLine("Penjualan tunai", "06:45–11:20", "+Rp986.000")
-            if (showIn) { LedgerLine("Pelunasan kasbon", "09:14 • Tunai", "+Rp250.000"); LedgerLine("Penjualan tunai", "10:42 • Tunai", "+Rp100.000") }
-            TextButton(onClick = { showIn = !showIn }) { Text(if (showIn) "Tampilkan lebih sedikit" else "Muat lebih banyak (+2 transaksi)") }
-        }
-        SectionGap(); GroupTitle("Riwayat uang keluar", "-Rp386.000 • contoh")
-        DemoCard {
-            LedgerLine("Kulakan telur & terigu", "07:15 • Restok", "-Rp240.000")
-            LedgerLine("Beli token listrik", "08:40 • Operasional", "-Rp50.000")
-            if (showOut) LedgerLine("Es & air galon", "10:05 • Operasional", "-Rp96.000")
-            TextButton(onClick = { showOut = !showOut }) { Text(if (showOut) "Tampilkan lebih sedikit" else "Muat lebih banyak (+1 pengeluaran)") }
-        }
-        SectionGap(); DemoNote("Saldo dan riwayat hanya contoh; belum ada pencatatan atau rekonsiliasi.")
-    }
-}
-
-@Composable
-private fun LedgerLine(title: String, subtitle: String, amount: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) { Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold); Text(subtitle, fontSize = 11.sp, color = Muted) }
-        Text(amount, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-    }
-}
-
-@Composable
 internal fun NotificationsScreen(ownerId: String, onBack: () -> Unit, onCredit: () -> Unit) {
     val context = LocalContext.current
     val inspection = LocalInspectionMode.current
@@ -158,7 +121,5 @@ private fun NotificationCard(type: String, title: String, detail: String, icon: 
 
 @Preview(showBackground = true, widthDp = 360, heightDp = 800)
 @Composable private fun ReportsPreview() { WarungMatriksTheme { ReportsScreen() } }
-@Preview(showBackground = true, widthDp = 360, heightDp = 800)
-@Composable private fun CashLedgerPreview() { WarungMatriksTheme { CashLedgerScreen({}) } }
 @Preview(showBackground = true, widthDp = 360, heightDp = 800)
 @Composable private fun NotificationsPreview() { WarungMatriksTheme { NotificationsScreen("preview", {}, {}) } }

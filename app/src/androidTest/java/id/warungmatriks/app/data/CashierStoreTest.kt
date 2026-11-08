@@ -291,6 +291,11 @@ class CashierStoreTest {
         before.saveProduct(product)
         before.checkout("old-sale", listOf(CashierLine(product, 1)), 0, "Bu RT")
         before.writableDatabase.execSQL("DROP TABLE stock_additions")
+        before.writableDatabase.execSQL("DROP TABLE qris_records")
+        before.writableDatabase.execSQL("ALTER TABLE cash_movements RENAME TO cash_movements_v5")
+        before.writableDatabase.execSQL("CREATE TABLE cash_movements (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, amount INTEGER NOT NULL)")
+        before.writableDatabase.execSQL("INSERT INTO cash_movements SELECT sale_id,owner_id,amount FROM cash_movements_v5")
+        before.writableDatabase.execSQL("DROP TABLE cash_movements_v5")
         before.writableDatabase.version = 3
         before.close()
         val after = CashierStore(context, "owner", dbName)
@@ -317,6 +322,74 @@ class CashierStoreTest {
             assertEquals("0012345", other.products().first { it.id == "two" }.barcode)
             assertTrue(owner.products().none { it.id == "two" })
         } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun weeklyCashIsScopedDeduplicatedAndSeparateFromQris() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "weekly-cash-" + UUID.randomUUID() + ".db"
+        val owner = CashierStore(context, "owner", dbName)
+        val other = CashierStore(context, "other", dbName)
+        try {
+            val product = Product("soap", "Sabun", 5000, 3000, 10)
+            owner.saveProduct(product); other.saveProduct(product)
+            owner.checkout("cash-sale", listOf(CashierLine(product, 1)), 10000, "")
+            owner.checkout("cash-sale", listOf(CashierLine(product, 1)), 10000, "")
+            owner.checkout("partial-sale", listOf(CashierLine(product, 1)), 1000, "Bu RT")
+            owner.checkout("credit-sale", listOf(CashierLine(product, 1)), 0, "Pak Doni")
+            owner.checkoutQris("qris-sale", listOf(CashierLine(product, 1)))
+            other.checkout("other-sale", listOf(CashierLine(product, 1)), 5000, "")
+            owner.addManualCash("deposit", "in", "deposit", 10000, "Tambahan uang")
+            owner.addManualCash("deposit", "in", "deposit", 10000, "Tambahan uang")
+            owner.addManualCash("expense", "out", "purchase", 3000, "Kulakan tunai")
+            val week = CashWeek(0, System.currentTimeMillis() + 60000)
+            assertEquals(CashSummary(16000, 3000), owner.cashSummary(week))
+            assertEquals(13000L, owner.cashSummary(week).net)
+            assertEquals(3, owner.cashMovements("in", week).movements.size)
+            assertEquals(1, owner.cashMovements("out", week).movements.size)
+            assertEquals(CashSummary(5000, 0), other.cashSummary(week))
+            assertEquals(CashSummary(0, 0), owner.cashSummary(CashWeek(week.end, week.end + 604800000L)))
+            try { owner.addManualCash("deposit", "in", "deposit", 20000, "Tambahan uang"); fail("Same ID cannot change amount") } catch (_: IllegalArgumentException) { }
+            assertEquals(CashSummary(16000, 3000), owner.cashSummary(week))
+            owner.addManualCash("more-out", "out", "withdrawal", 20000, "")
+            assertEquals(-7000L, owner.cashSummary(week).net)
+            owner.readableDatabase.rawQuery("SELECT amount FROM qris_records WHERE owner_id='owner' AND sale_id='qris-sale'", null).use {
+                assertTrue(it.moveToFirst()); assertEquals(5000, it.getInt(0)); assertTrue(!it.moveToNext())
+            }
+            owner.writableDatabase.execSQL("UPDATE sales SET created_at=1 WHERE id='qris-sale'")
+            HistoryRetention.clean(owner.writableDatabase, System.currentTimeMillis(), "owner")
+            owner.readableDatabase.rawQuery("SELECT COUNT(*) FROM qris_records WHERE sale_id='qris-sale'", null).use { it.moveToFirst(); assertEquals(1, it.getInt(0)) }
+            try { owner.addManualCash("invalid", "out", "operational", 1000, ""); fail("Operational category is not supported") } catch (_: IllegalArgumentException) { }
+        } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun upgradeV4KeepsDatedAndUndatedCashAndArchivesExistingQris() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "migration-v4-" + UUID.randomUUID() + ".db"
+        val before = CashierStore(context, "owner", dbName)
+        val product = Product("legacy", "Barang", 5000, 3000, 5)
+        before.saveProduct(product)
+        before.checkout("dated", listOf(CashierLine(product, 1)), 5000, "")
+        before.checkout("undated", listOf(CashierLine(product, 1)), 5000, "")
+        before.checkoutQris("old-qris", listOf(CashierLine(product, 1)))
+        val db = before.writableDatabase
+        db.execSQL("DELETE FROM sales WHERE id='undated'")
+        db.execSQL("DROP TABLE qris_records")
+        db.execSQL("ALTER TABLE cash_movements RENAME TO cash_movements_v5")
+        db.execSQL("CREATE TABLE cash_movements (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, amount INTEGER NOT NULL)")
+        db.execSQL("INSERT INTO cash_movements SELECT sale_id,owner_id,amount FROM cash_movements_v5")
+        db.execSQL("DROP TABLE cash_movements_v5")
+        db.version = 4
+        before.close()
+        val after = CashierStore(context, "owner", dbName)
+        try {
+            val all = after.cashMovements("in", null).movements
+            assertEquals(2, all.size)
+            assertTrue(all.first { it.id == "dated" }.timestamp != null)
+            assertNull(all.first { it.id == "undated" }.timestamp)
+            assertEquals(1, after.cashMovements("in", CashWeek(0, System.currentTimeMillis() + 60000)).movements.size)
+            after.readableDatabase.rawQuery("SELECT amount FROM qris_records WHERE sale_id='old-qris'", null).use { assertTrue(it.moveToFirst()); assertEquals(5000, it.getInt(0)) }
+            assertEquals(2, after.stocks().getValue("legacy"))
+        } finally { after.close(); context.deleteDatabase(dbName) }
     }
 
 }
