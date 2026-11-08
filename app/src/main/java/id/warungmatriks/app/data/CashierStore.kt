@@ -7,39 +7,102 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 internal class InsufficientStockException : Exception()
-
+internal class ProductChangedException : Exception()
 internal data class LocalReceivable(val customer: String, val remaining: Int)
-
 internal data class CashierLine(val product: Product, val quantity: Int)
 internal data class CheckoutResult(val total: Int, val received: Int, val change: Int, val debt: Int, val customer: String?)
 
-/** Local prototype store. Only the cashier screen reads these records for now. */
-internal class CashierStore(context: Context, private val ownerId: String) :
-    SQLiteOpenHelper(context.applicationContext, "cashier_prototype.db", null, 1) {
+/** One per-account local catalogue, stock and prototype transaction store. */
+internal class CashierStore(context: Context, private val ownerId: String, databaseName: String = "cashier_prototype.db") :
+    SQLiteOpenHelper(context.applicationContext, databaseName, null, 2) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE stock (owner_id TEXT NOT NULL, product_id TEXT NOT NULL, quantity INTEGER NOT NULL CHECK(quantity >= 0), PRIMARY KEY(owner_id, product_id))")
         db.execSQL("CREATE TABLE sales (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, created_at INTEGER NOT NULL, total INTEGER NOT NULL, received INTEGER NOT NULL, change_amount INTEGER NOT NULL, debt INTEGER NOT NULL, customer TEXT)")
-        db.execSQL("CREATE TABLE sale_items (sale_id TEXT NOT NULL, product_id TEXT NOT NULL, product_name TEXT NOT NULL, quantity INTEGER NOT NULL, price INTEGER NOT NULL, cost INTEGER NOT NULL)")
+        createSaleItems(db)
         db.execSQL("CREATE TABLE cash_movements (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, amount INTEGER NOT NULL)")
         db.execSQL("CREATE TABLE receivables (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, customer TEXT NOT NULL, amount_remaining INTEGER NOT NULL)")
+        createProducts(db)
     }
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+
+    private fun createSaleItems(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE sale_items (sale_id TEXT NOT NULL, product_id TEXT NOT NULL, product_name TEXT NOT NULL, quantity INTEGER NOT NULL, price INTEGER NOT NULL, cost INTEGER)")
+    }
+    private fun createProducts(db: SQLiteDatabase) {
+        db.execSQL("CREATE TABLE products (owner_id TEXT NOT NULL, product_id TEXT NOT NULL, name TEXT NOT NULL, price INTEGER NOT NULL, cost INTEGER, category TEXT NOT NULL, minimum_stock INTEGER NOT NULL, photo_file TEXT, barcode TEXT, active INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(owner_id, product_id))")
+        db.execSQL("CREATE UNIQUE INDEX products_barcode_per_owner ON products(owner_id, barcode) WHERE barcode IS NOT NULL")
+    }
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
+        if (oldVersion < 2) {
+            createProducts(db)
+            // Preserve historical sale lines; nullable cost means unknown, not zero.
+            db.execSQL("ALTER TABLE sale_items RENAME TO sale_items_v1")
+            createSaleItems(db)
+            db.execSQL("INSERT INTO sale_items (sale_id, product_id, product_name, quantity, price, cost) SELECT sale_id, product_id, product_name, quantity, price, cost FROM sale_items_v1")
+            db.execSQL("DROP TABLE sale_items_v1")
+        }
+    }
 
     private fun seed(db: SQLiteDatabase) {
         DemoData.products.forEach { product ->
+            db.execSQL("INSERT OR IGNORE INTO products (owner_id, product_id, name, price, cost, category, minimum_stock, active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)", arrayOf(ownerId, product.id, product.name, product.price, product.cost, product.category, product.minimumStock))
             db.execSQL("INSERT OR IGNORE INTO stock (owner_id, product_id, quantity) VALUES (?, ?, ?)", arrayOf(ownerId, product.id, product.stock))
         }
     }
 
-    suspend fun stocks(): Map<String, Int> = withContext(Dispatchers.IO) {
+    suspend fun products(): List<Product> = withContext(Dispatchers.IO) {
         val db = writableDatabase
         seed(db)
-        val result = mutableMapOf<String, Int>()
-        db.rawQuery("SELECT product_id, quantity FROM stock WHERE owner_id = ?", arrayOf(ownerId)).use { cursor ->
-            while (cursor.moveToNext()) result[cursor.getString(0)] = cursor.getInt(1)
+        val items = mutableListOf<Product>()
+        db.rawQuery("SELECT p.product_id,p.name,p.price,p.cost,s.quantity,p.category,p.minimum_stock,p.photo_file,p.barcode,p.active FROM products p JOIN stock s ON p.owner_id=s.owner_id AND p.product_id=s.product_id WHERE p.owner_id=? ORDER BY p.name COLLATE NOCASE", arrayOf(ownerId)).use { c ->
+            while (c.moveToNext()) {
+                val id = c.getString(0)
+                items.add(Product(id = id, name = c.getString(1), price = c.getInt(2), cost = if (c.isNull(3)) null else c.getInt(3), stock = c.getInt(4),
+                    image = DemoData.products.firstOrNull { it.id == id }?.image, category = c.getString(5), minimumStock = c.getInt(6),
+                    photoFile = c.getString(7), barcode = c.getString(8), active = c.getInt(9) == 1))
+            }
         }
-        result
+        items
     }
+
+    suspend fun saveProduct(product: Product) = withContext(Dispatchers.IO) {
+        require(product.id.isNotBlank() && product.name.isNotBlank() && product.category.isNotBlank())
+        require(product.price > 0 && (product.cost == null || product.cost >= 0) && product.stock >= 0 && product.minimumStock >= 0)
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            seed(db)
+            db.execSQL("INSERT INTO products (owner_id, product_id, name, price, cost, category, minimum_stock, photo_file, barcode, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", arrayOf(ownerId, product.id, product.name.trim(), product.price, product.cost, product.category, product.minimumStock, product.photoFile, product.barcode?.trim()?.takeIf { it.isNotEmpty() }, if (product.active) 1 else 0))
+            db.execSQL("INSERT INTO stock (owner_id, product_id, quantity) VALUES (?, ?, ?)", arrayOf(ownerId, product.id, product.stock))
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    suspend fun updateProduct(product: Product) = withContext(Dispatchers.IO) {
+        require(product.id.isNotBlank() && product.name.isNotBlank() && product.category.isNotBlank())
+        require(product.price > 0 && (product.cost == null || product.cost >= 0) && product.minimumStock >= 0)
+        val db = writableDatabase
+        val update = db.compileStatement("UPDATE products SET name=?, price=?, cost=?, category=?, minimum_stock=?, photo_file=?, barcode=? WHERE owner_id=? AND product_id=?")
+        try {
+            update.bindString(1, product.name.trim()); update.bindLong(2, product.price.toLong())
+            if (product.cost == null) update.bindNull(3) else update.bindLong(3, product.cost.toLong())
+            update.bindString(4, product.category); update.bindLong(5, product.minimumStock.toLong())
+            if (product.photoFile == null) update.bindNull(6) else update.bindString(6, product.photoFile)
+            val barcode = product.barcode?.trim()?.takeIf { it.isNotEmpty() }
+            if (barcode == null) update.bindNull(7) else update.bindString(7, barcode)
+            update.bindString(8, ownerId); update.bindString(9, product.id)
+            check(update.executeUpdateDelete() == 1) { "Barang tidak ditemukan." }
+        } finally { update.close() }
+    }
+
+    suspend fun setProductActive(id: String, active: Boolean) = withContext(Dispatchers.IO) {
+        val update = writableDatabase.compileStatement("UPDATE products SET active=? WHERE owner_id=? AND product_id=?")
+        try {
+            update.bindLong(1, if (active) 1L else 0L); update.bindString(2, ownerId); update.bindString(3, id)
+            check(update.executeUpdateDelete() == 1) { "Barang tidak ditemukan." }
+        } finally { update.close() }
+    }
+
+    suspend fun stocks(): Map<String, Int> = products().associate { it.id to it.stock }
 
     suspend fun receivables(): List<LocalReceivable> = withContext(Dispatchers.IO) {
         val result = mutableListOf<LocalReceivable>()
@@ -50,8 +113,7 @@ internal class CashierStore(context: Context, private val ownerId: String) :
     }
 
     suspend fun checkout(id: String, lines: List<CashierLine>, received: Int, customer: String): CheckoutResult = withContext(Dispatchers.IO) {
-        require(lines.isNotEmpty() && received >= 0)
-        require(lines.all { it.quantity > 0 && DemoData.products.any { p -> p.id == it.product.id && p.price == it.product.price && p.cost == it.product.cost } })
+        require(lines.isNotEmpty() && received >= 0 && lines.all { it.quantity > 0 })
         require(lines.map { it.product.id }.distinct().size == lines.size)
         val sum = lines.sumOf { it.product.price.toLong() * it.quantity }
         require(sum > 0L && sum <= Int.MAX_VALUE.toLong())
@@ -73,6 +135,9 @@ internal class CashierStore(context: Context, private val ownerId: String) :
                 }
             }
             lines.forEach { line ->
+                db.rawQuery("SELECT name, price, cost, active FROM products WHERE owner_id=? AND product_id=?", arrayOf(ownerId, line.product.id)).use { c ->
+                    if (!c.moveToFirst() || c.getString(0) != line.product.name || c.getInt(1) != line.product.price || (if (c.isNull(2)) null else c.getInt(2)) != line.product.cost || c.getInt(3) != 1) throw ProductChangedException()
+                }
                 val update = db.compileStatement("UPDATE stock SET quantity = quantity - ? WHERE owner_id = ? AND product_id = ? AND quantity >= ?")
                 try {
                     update.bindLong(1, line.quantity.toLong()); update.bindString(2, ownerId)

@@ -27,6 +27,7 @@ internal fun WarungMatriksApp(account: SignedInAccount, onSignOut: () -> Unit, s
     var screen by remember { mutableStateOf(Screen.KASIR) }
     val backStack = remember { mutableStateListOf<Screen>() }
     val cashierState = remember { CashierState() }
+    var editingProductId by remember { mutableStateOf<String?>(null) }
     fun navigate(next: Screen) { if (screen != next) { backStack.add(screen); screen = next } }
     fun back() { screen = if (backStack.isNotEmpty()) backStack.removeAt(backStack.lastIndex) else Screen.KASIR }
     BackHandler(enabled = screen !in mainScreens) { back() }
@@ -46,13 +47,13 @@ internal fun WarungMatriksApp(account: SignedInAccount, onSignOut: () -> Unit, s
             when (screen) {
                 Screen.KASIR -> CashierScreen(cashierState, ownerId = account.uid, cashierName = account.shop.ownerName, onNotifications = { navigate(Screen.NOTIFIKASI) }, onAccount = { navigate(Screen.AKUN) }, onCash = { navigate(Screen.KAS) }, onInventory = { navigate(Screen.BARANG) })
                 Screen.PESANAN -> OrdersScreen(onCash = { navigate(Screen.KAS) }, onCredit = { navigate(Screen.KASBON) })
-                Screen.BARANG -> InventoryScreen(onAdd = { navigate(Screen.TAMBAH) })
+                Screen.BARANG -> InventoryScreen(ownerId = account.uid, onAdd = { editingProductId = null; navigate(Screen.TAMBAH) }, onEdit = { editingProductId = it; navigate(Screen.TAMBAH) })
                 Screen.LAPORAN -> ReportsScreen()
                 Screen.AKUN -> AccountScreen(account = account, onSignOut = onSignOut, signOutBusy = signOutBusy, signOutError = signOutError, onNotifications = { navigate(Screen.NOTIFIKASI) })
                 Screen.NOTIFIKASI -> NotificationsScreen(onBack = { back() }, onCredit = { navigate(Screen.KASBON) })
                 Screen.KAS -> CashLedgerScreen(onBack = { back() })
                 Screen.KASBON -> CreditScreen(onBack = { back() })
-                Screen.TAMBAH -> AddProductScreen(onBack = { back() })
+                Screen.TAMBAH -> AddProductScreen(ownerId = account.uid, productId = editingProductId, onBack = { back() })
             }
         }
     }

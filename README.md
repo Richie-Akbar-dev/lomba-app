@@ -1,6 +1,6 @@
 # Warung Matriks — prototipe Android
 
-Aplikasi Android native berbasis Kotlin, Jetpack Compose dan Material 3. Tampilan lain masih menggunakan data demo; tahap saat ini berfokus pada alur masuk Google dan pengisian profil warung. Logo pengguna dipertahankan. Warna utama: `#2563EB`, `#38BDF8`, `#F1F5F9`, dan `#FFFFFF`.
+Aplikasi Android native berbasis Kotlin, Jetpack Compose dan Material 3. Prototipe mencakup alur masuk Google, profil lokal, katalog dan kasir lokal; sebagian halaman lain masih menggunakan data demo. Logo pengguna dipertahankan. Warna utama: `#2563EB`, `#38BDF8`, `#F1F5F9`, dan `#FFFFFF`.
 
 ## Buka proyek
 
@@ -51,22 +51,32 @@ Karena nilai `local.properties` tidak ikut Git, setiap lingkungan build harus me
 
 ## Halaman demo dan Preview
 
-Navigasi bawah: **Kasir, Pesanan, Barang, Laporan, Akun**. Halaman Kas, Kasbon, Tambah Barang dan Notifikasi diakses melalui halaman terkait. Daftar/masuk sekarang satu tombol Google, diikuti formulir profil lokal.
+Navigasi bawah: **Kasir, Pesanan, Barang, Laporan, Akun**. Halaman Kas, Kasbon, Tambah/Edit Barang dan Notifikasi diakses melalui halaman terkait. Daftar/masuk sekarang satu tombol Google, diikuti formulir profil lokal.
 
 Cari Preview di file `ui/SplashScreen.kt`, `ui/AuthScreens.kt`, `ui/WarungMatriksApp.kt`, `ui/OverviewScreens.kt`, `ui/InventoryScreens.kt`, dan `ui/AccountScreens.kt`. Setelah Gradle Sync, pilih **Split** atau **Design**, lalu **Build & Refresh** jika diminta.
 
-## Batasan fitur lain
+## Katalog dan kasir lokal (prototipe)
 
-Katalog masih menggunakan **barang dan harga demo**. Barang tanpa gambar memakai ikon paket lokal; logo Warung Matriks tidak diubah. Pada Dashboard Kasir, pembayaran tunai (termasuk Rp0) menyimpan transaksi, stok, penerimaan tunai dan sisa kasbon ke database SQLite lokal dalam satu transaksi. Nama pelanggan wajib untuk sisa kasbon. Catatan kasbon lokal dapat dilihat di bagian bawah Dashboard Kasir; **halaman Pesanan, Barang, Kas, Kasbon dan Laporan lain belum terhubung dan masih menampilkan data demo**. Pelunasan kasbon, saldo laci nyata, manajemen barang dan laporan nyata belum tersedia. Keranjang belum disimpan saat Activity dibuat ulang.
+- Barang disimpan per UID akun di SQLite pada perangkat, bersama stok, transaksi tunai dan kasbon. Katalog inventaris dan kasir membaca sumber yang sama. Saat pertama digunakan, **empat barang contoh otomatis ditambahkan** untuk mempertahankan data stok prototipe sebelumnya; bukan data toko sebenarnya. Barang contoh dapat diubah atau dinonaktifkan.
+- Tambah barang: nama dan harga jual wajib, satuan pcs; kategori dapat ditulis sendiri, barcode opsional harus unik per akun, stok awal dan batas minimum tidak negatif. Restok ditandai saat stok ≤ batas. Stok awal tidak otomatis menjadi catatan kulakan atau kas keluar.
+- Modal boleh kosong dan berarti tidak diketahui, bukan Rp0. Jika modal diketahui dan harga jual lebih rendah, form memperingatkan pengguna. Laba kotor tidak dihitung untuk keranjang dengan modal yang tidak diketahui.
+- Foto opsional dapat dipilih dari galeri atau diambil lewat aplikasi kamera perangkat. Foto diubah ukurannya dan disimpan di penyimpanan privat aplikasi; tanpa foto dipakai ikon barang (barang contoh memiliki ilustrasi bawaan). Edit foto mengganti gambar di katalog. Izin kamera diberikan kepada aplikasi kamera melalui FileProvider; kompatibilitas perlu diuji di perangkat.
+- Edit nama, kategori, barcode, harga, modal, foto dan batas restok tersedia. Edit tidak mengubah stok; penyesuaian stok/kulakan belum tersedia. Menonaktifkan barang menyimpan datanya dan riwayatnya, tetapi mencegah penjualan baru; dapat diaktifkan kembali. Penjualan menyimpan snapshot nama/harga/modal saat transaksi, sehingga edit berikutnya tidak mengubah riwayat sebelumnya.
+- Tombol simpan menampilkan popup selama **50 ms (0,05 detik)** sesuai permintaan; durasi ini mungkin sulit terlihat. Keranjang belum disimpan saat Activity dibuat ulang.
+- Migrasi skema SQLite v1 ke v2 dirancang mempertahankan stok, transaksi, penerimaan tunai dan kasbon lama, sambil menambahkan katalog dan modal opsional pada rincian penjualan. Migrasi harus diuji pada perangkat dengan data lama sebelum penggunaan nyata.
 
-Tombol QRIS menampilkan QR nominal secara offline setelah pengguna memasukkan teks payload QRIS statis toko. Input hanya tersimpan di memori selama sesi, tidak disimpan/dikirim; import foto belum tersedia. Pembentukan QR bukan bukti pembayaran dan tidak membuat catatan transaksi, tidak ada konfirmasi otomatis atau manual. Implementasi hanya menerima payload ASCII tertentu dan memerlukan validasi terhadap penyedia QRIS; belum diuji dengan merchant sesungguhnya. Jangan gunakan QR ini atau aplikasi ini untuk pembayaran dan pembukuan nyata sebelum build, pengujian dan integrasi tuntas.
+Pada Dashboard Kasir, pembayaran tunai (termasuk Rp0) menyimpan transaksi, stok, penerimaan tunai dan sisa kasbon secara atomik. Nama pelanggan wajib untuk kasbon. Ringkasan kasbon lokal ditampilkan di Dashboard, tetapi **halaman Pesanan, Kas, Kasbon terperinci, Laporan dan Notifikasi masih demo**, belum menampilkan transaksi sesungguhnya. Pelunasan kasbon, saldo laci nyata, kulakan dan laporan nyata belum tersedia. Angka contoh pada halaman-halaman tersebut bukan pembukuan toko.
 
-Belum ada kontrol akses, notifikasi, sinkronisasi, backup, printer atau ekspor. SQLite dan profil hanya ada di perangkat dan dapat hilang jika data aplikasi dihapus atau perangkat rusak. Login offline tidak memvalidasi pencabutan sesi terhadap server. Pengujian unit Settlement/QRIS dan pengujian database Android ada di proyek, namun tetap harus dijalankan di Android Studio/emulator.
+## QRIS dan batasan
+
+Tombol QRIS menampilkan QR nominal penuh secara offline dari teks payload QRIS statis toko; input hanya tersimpan di memori selama sesi. **QRIS tidak membuat kasbon, tetapi saat ini juga tidak mencatat transaksi maupun membuktikan pembayaran berhasil.** QR tampil/nominal pas bukan konfirmasi lunas. Belum ada konfirmasi otomatis atau manual; cara pencatatan pembayaran QRIS perlu diputuskan. Implementasi hanya menerima payload ASCII tertentu dan memerlukan validasi terhadap penyedia QRIS; belum diuji dengan merchant sesungguhnya. Jangan gunakan QR ini atau aplikasi ini untuk pembayaran dan pembukuan nyata sebelum build, pengujian dan integrasi tuntas.
+
+Belum ada sinkronisasi, backup, printer, ekspor atau pelacakan perubahan stok. SQLite, foto dan profil hanya ada di perangkat; penghapusan data aplikasi, instal ulang atau kerusakan perangkat dapat menghilangkannya. Login offline tidak memvalidasi pencabutan sesi terhadap server. Pengujian unit dan instrumentasi tersedia di proyek, tetapi belum dijalankan dalam lingkungan kerja ini karena JDK dan Android SDK tidak tersedia; build, foto, migrasi dan fitur lainnya perlu diuji di Android Studio/emulator dan perangkat.
 
 ## Struktur
 
 - `auth/` — integrasi Credential Manager/Firebase dan profil warung lokal.
-- `data/` — data demo, penyimpanan kasir lokal, perhitungan tunai dan pembentukan payload QRIS.
+- `data/` — katalog dan foto lokal, penyimpanan kasir SQLite, perhitungan tunai dan pembentukan payload QRIS.
 - `ui/` — alur autentikasi, layar, komponen dan Compose Preview.
 - `ui/theme/` dan `res/drawable/` — tema, logo dan ilustrasi lokal.
-- `app/src/test/` — contoh unit test perhitungan.
+- `app/src/test/` dan `app/src/androidTest/` — tes unit dan instrumentasi database.

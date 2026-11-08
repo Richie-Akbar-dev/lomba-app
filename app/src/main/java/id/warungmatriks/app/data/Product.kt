@@ -9,9 +9,14 @@ data class Product(
     val id: String,
     val name: String,
     val price: Int,
-    val cost: Int,
+    val cost: Int?,
     val stock: Int,
     @DrawableRes val image: Int? = null,
+    val category: String = "Sembako",
+    val minimumStock: Int = 0,
+    val photoFile: String? = null,
+    val barcode: String? = null,
+    val active: Boolean = true,
 ) {
     // Local drawable IDs only; a missing image uses a universal package icon.
     @get:DrawableRes
@@ -28,13 +33,20 @@ object DemoData {
     val initialCart = mapOf("indomie" to 3, "water" to 1, "eggs" to 1)
 }
 
-fun rupiah(amount: Int): String = "Rp" + NumberFormat.getNumberInstance(Locale("id", "ID")).format(amount)
+fun rupiah(amount: Int): String = rupiah(amount.toLong())
+fun rupiah(amount: Long): String = "Rp" + NumberFormat.getNumberInstance(Locale("id", "ID")).format(amount)
 
-data class CartTotals(val subtotal: Int, val grossProfit: Int)
+data class CartTotals(val subtotal: Int, val grossProfit: Int?, val exceedsLimit: Boolean = false)
 
-/** Demo calculation: excludes operating expenses, taxes, and discounts. */
-fun calculateCartTotals(products: List<Product>, quantities: Map<String, Int>): CartTotals =
-    CartTotals(
-        subtotal = products.sumOf { it.price * (quantities[it.id] ?: 0) },
-        grossProfit = products.sumOf { (it.price - it.cost) * (quantities[it.id] ?: 0) },
-    )
+/** Unknown cost is never treated as zero. Values above the supported total must not be sold. */
+fun calculateCartTotals(products: List<Product>, quantities: Map<String, Int>): CartTotals {
+    val selected = products.filter { (quantities[it.id] ?: 0) > 0 }
+    val limit = Int.MAX_VALUE.toLong() + 1
+    val total = selected.fold(0L) { acc, item ->
+        (acc + item.price.toLong() * (quantities[item.id] ?: 0)).coerceAtMost(limit)
+    }
+    val gross = if (selected.any { it.cost == null } || total >= limit) null else selected.sumOf {
+        (it.price.toLong() - it.cost!!.toLong()) * (quantities[it.id] ?: 0)
+    }
+    return CartTotals(total.coerceIn(0, Int.MAX_VALUE.toLong()).toInt(), gross?.takeIf { it in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong() }?.toInt(), total > Int.MAX_VALUE)
+}
