@@ -72,7 +72,7 @@ internal class CashierState {
 }
 
 @Composable
-internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: String, onNotifications: () -> Unit, onAccount: () -> Unit, onCash: () -> Unit, onInventory: () -> Unit, onAddProduct: () -> Unit) {
+internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: String, onNotifications: () -> Unit, onAccount: () -> Unit, onCash: () -> Unit, onInventory: () -> Unit, onAddProduct: () -> Unit, onCredit: () -> Unit, onCreditCheckout: (PendingCredit) -> Unit) {
     val context = LocalContext.current
     val inspection = LocalInspectionMode.current
     val store = remember(context, ownerId) { CashierStore(context, ownerId) }
@@ -244,12 +244,15 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
         AmountRow("Sisa kasbon", if (state.cashText.isBlank()) "—" else rupiah(debt), bold = state.cashText.isNotBlank() && debt > 0, valueColor = Blue)
         if (totals.exceedsLimit) Text("Total melebihi batas yang didukung. Kurangi isi keranjang.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
         if (total > 0 && state.cashText.isNotBlank() && debt > 0) {
-            Text("Sisa akan dicatat sebagai kasbon. Nama pelanggan wajib diisi.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
+            Text("Lanjutkan ke halaman Kasbon untuk melengkapi nama dan nomor WhatsApp.", color = Muted, fontSize = 12.sp, modifier = Modifier.padding(top = 8.dp))
         }
         Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
-                onClick = { state.customer = ""; state.showCheckout = true },
+                onClick = {
+                    if (debt > 0) onCreditCheckout(PendingCredit(state.checkoutId, items.map { CashierLine(it, quantities[it.id] ?: 0) }, cash))
+                    else state.showCheckout = true
+                },
                 enabled = state.ready && total > 0 && !totals.exceedsLimit && state.cashText.isNotBlank() && !state.processing,
                 modifier = Modifier.weight(1f).height(52.dp), shape = RoundedCornerShape(13.dp), contentPadding = PaddingValues(horizontal = 4.dp),
             ) { Text("Bayar tunai", fontWeight = FontWeight.Bold, fontSize = 12.sp) }
@@ -264,6 +267,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
             }
         }
         Text("Penjualan dan kas tunai tersimpan lokal; pembayaran QRIS tidak diverifikasi. Laporan masih demo.", modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp, bottom = 16.dp), color = Muted, fontSize = 11.sp)
+        if (state.receivables.isEmpty()) TextButton(onClick = onCredit) { Text("Buka kasbon pelanggan →") }
         if (state.receivables.isNotEmpty()) {
             SectionHeading("Kasbon lokal", "${state.receivables.size} catatan")
             Spacer(Modifier.height(8.dp))
@@ -271,7 +275,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
                 state.receivables.take(5).forEach { entry ->
                     InfoLine(entry.customer, rupiah(entry.remaining)); Spacer(Modifier.height(8.dp))
                 }
-                DemoNote("Kasbon tersimpan di prototipe lokal. Pelunasan dan halaman Kasbon belum terhubung.")
+                DemoAction("Buka kasbon pelanggan", onCredit)
             }
         }
         Spacer(Modifier.height(24.dp))
@@ -297,12 +301,8 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
             title = { Text(if (debt > 0) "Bayar & catat kasbon" else "Konfirmasi tunai") },
             text = { Column {
                 Text("Total: ${rupiah(total)}\nTunai diterima: ${rupiah(cash)}\nKembalian: ${rupiah((cash - total).coerceAtLeast(0))}\nSisa kasbon: ${rupiah(debt)}")
-                if (debt > 0) {
-                    Spacer(Modifier.height(12.dp))
-                    OutlinedTextField(value = state.customer, onValueChange = { state.customer = it.take(80) }, label = { Text("Nama pelanggan (wajib)") }, singleLine = true)
-                }
                 Spacer(Modifier.height(8.dp))
-                DemoNote("Simpan lokal saja. Riwayat tersedia di Pesanan dan kas tunai tercatat; halaman kasbon masih demo.")
+                DemoNote("Transaksi disimpan di perangkat, termasuk kas tunai dan riwayat Pesanan.")
             } },
             confirmButton = { TextButton(enabled = !state.processing && (debt == 0 || state.customer.isNotBlank()), onClick = {
                 val lines = items.map { CashierLine(it, quantities[it.id] ?: 0) }

@@ -18,6 +18,8 @@ import id.warungmatriks.app.ui.theme.*
 import id.warungmatriks.app.data.CashierStore
 import id.warungmatriks.app.data.DemoData
 import id.warungmatriks.app.data.Product
+import id.warungmatriks.app.data.CreditDetail
+import id.warungmatriks.app.data.rupiah
 import id.warungmatriks.app.data.needsRestock
 import kotlinx.coroutines.CancellationException
 
@@ -75,14 +77,15 @@ internal fun NotificationsScreen(ownerId: String, onBack: () -> Unit, onCredit: 
     var filter by remember { mutableStateOf("Semua") }
     var revision by remember { mutableIntStateOf(0) }
     var items by remember { mutableStateOf<List<Product>>(emptyList()) }
+    var dueCredits by remember { mutableStateOf<List<CreditDetail>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(store, inspection, revision) {
         loading = true; error = null
-        try { items = (if (inspection) DemoData.products else store.products()).filter { it.needsRestock() } }
+        try { items = (if (inspection) DemoData.products else store.products()).filter { it.needsRestock() }; dueCredits = if (inspection) emptyList() else store.creditDetails().filter { it.remind && it.dueAt != null && it.dueAt <= System.currentTimeMillis() } }
         catch (e: CancellationException) { throw e } catch (_: Exception) { error = "Peringatan stok belum dapat dimuat." } finally { loading = false }
     }
-    DemoPage("Notifikasi", "Pengingat stok tersimpan lokal", onBack, badgeText = "DATA LOKAL") {
+    DemoPage("Notifikasi", "Pengingat stok dan kasbon lokal", onBack, badgeText = "DATA LOKAL") {
         GroupTitle("Pengingat toko", "Stok barang aktif yang sama dengan atau di bawah batas minimum")
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("Semua", "Stok", "Kasbon").forEach { FilterChip(selected = filter == it, onClick = { filter = it }, label = { Text(it, fontSize = 12.sp) }) }
@@ -101,10 +104,15 @@ internal fun NotificationsScreen(ownerId: String, onBack: () -> Unit, onCredit: 
             }
         }
         if (filter != "Stok") {
-            Spacer(Modifier.height(8.dp)); DemoNote("Pengingat kasbon otomatis belum tersedia; buku kasbon masih berupa contoh.")
-            TextButton(onClick = onCredit) { Text("Buka buku kasbon (demo) →") }
+            Spacer(Modifier.height(8.dp)); Text("Kasbon jatuh tempo", fontWeight = FontWeight.Bold)
+            if (dueCredits.isEmpty()) DemoNote("Tidak ada pengingat kasbon yang jatuh tempo.")
+            dueCredits.forEach { credit ->
+                NotificationCard("KASBON JATUH TEMPO", credit.customer, "Sisa ${rupiah(credit.remaining)}", Icons.Default.NotificationsNone)
+                Spacer(Modifier.height(10.dp))
+            }
+            TextButton(onClick = onCredit) { Text("Buka buku kasbon →") }
         }
-        Spacer(Modifier.height(12.dp)); DemoNote("Peringatan dihitung dari stok terbaru saat halaman dibuka atau dimuat ulang. Belum ada notifikasi sistem di luar aplikasi.")
+        Spacer(Modifier.height(12.dp)); DemoNote("Pengingat kasbon muncul saat atau setelah jatuh tempo jika diaktifkan. Android dapat menunda notifikasi; izin notifikasi diperlukan.")
     }
 }
 

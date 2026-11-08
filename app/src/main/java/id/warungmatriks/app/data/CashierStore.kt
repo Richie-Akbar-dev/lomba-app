@@ -15,7 +15,7 @@ internal data class CheckoutResult(val total: Int, val received: Int, val change
 
 /** One per-account local catalogue, stock and prototype transaction store. */
 internal class CashierStore(context: Context, private val ownerId: String, databaseName: String = "cashier_prototype.db") :
-    SQLiteOpenHelper(context.applicationContext, databaseName, null, 5) {
+    SQLiteOpenHelper(context.applicationContext, databaseName, null, 6) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE stock (owner_id TEXT NOT NULL, product_id TEXT NOT NULL, quantity INTEGER NOT NULL CHECK(quantity >= 0), PRIMARY KEY(owner_id, product_id))")
         db.execSQL("CREATE TABLE sales (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, created_at INTEGER NOT NULL, total INTEGER NOT NULL, received INTEGER NOT NULL, change_amount INTEGER NOT NULL, debt INTEGER NOT NULL, customer TEXT, payment_method TEXT NOT NULL DEFAULT 'cash')")
@@ -25,6 +25,15 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         db.execSQL("CREATE TABLE receivables (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, customer TEXT NOT NULL, amount_remaining INTEGER NOT NULL)")
         createProducts(db)
         createStockAdditions(db)
+        upgradeCredit(db)
+    }
+
+    private fun upgradeCredit(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE receivables ADD COLUMN phone TEXT")
+        db.execSQL("ALTER TABLE receivables ADD COLUMN due_at INTEGER")
+        db.execSQL("ALTER TABLE receivables ADD COLUMN remind INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE receivables ADD COLUMN notified INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("CREATE TABLE credit_payments (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, sale_id TEXT NOT NULL, amount INTEGER NOT NULL, created_at INTEGER NOT NULL)")
     }
 
     private fun createQrisRecords(db: SQLiteDatabase) {
@@ -63,6 +72,7 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
             createQrisRecords(db)
             db.execSQL("INSERT INTO qris_records(sale_id,owner_id,created_at,amount) SELECT id,owner_id,created_at,total FROM sales WHERE payment_method='qris'")
         }
+        if (oldVersion < 6) upgradeCredit(db)
     }
 
     private fun seed(db: SQLiteDatabase) {
@@ -203,6 +213,40 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         result
     }
 
+    suspend fun creditDetails(): List<CreditDetail> = withContext(Dispatchers.IO) {
+        val result = mutableListOf<CreditDetail>()
+        readableDatabase.rawQuery("SELECT r.sale_id,r.customer,r.amount_remaining,r.phone,r.due_at,r.remind,s.total,s.received,s.created_at FROM receivables r JOIN sales s ON s.id=r.sale_id AND s.owner_id=r.owner_id WHERE r.owner_id=? AND r.amount_remaining>0 ORDER BY s.created_at DESC", arrayOf(ownerId)).use { c ->
+            while (c.moveToNext()) result.add(CreditDetail(c.getString(0), c.getString(1), c.getInt(2), c.getString(3), if (c.isNull(4)) null else c.getLong(4), c.getInt(5) == 1, c.getInt(6), c.getInt(7), c.getLong(8)))
+        }
+        result
+    }
+
+    /** Idempotent payment and cash entry commit together. A completed credit leaves the active list. */
+    suspend fun payCredit(paymentId: String, saleId: String, amount: Int): Int = withContext(Dispatchers.IO) {
+        require(paymentId.isNotBlank() && amount > 0)
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.rawQuery("SELECT sale_id,amount FROM credit_payments WHERE id=? AND owner_id=?", arrayOf(paymentId,ownerId)).use { c ->
+                if (c.moveToFirst()) {
+                    require(c.getString(0) == saleId && c.getInt(1) == amount)
+                    val remaining = db.rawQuery("SELECT amount_remaining FROM receivables WHERE sale_id=? AND owner_id=?", arrayOf(saleId,ownerId)).use { r -> if (r.moveToFirst()) r.getInt(0) else 0 }
+                    db.setTransactionSuccessful()
+                    return@withContext remaining
+                }
+            }
+            val remaining = db.rawQuery("SELECT amount_remaining FROM receivables WHERE sale_id=? AND owner_id=?", arrayOf(saleId,ownerId)).use { c -> check(c.moveToFirst()) { "Kasbon tidak ditemukan atau sudah lunas." }; c.getInt(0) }
+            require(amount <= remaining) { "Angsuran melebihi sisa kasbon." }
+            val now = System.currentTimeMillis()
+            db.execSQL("INSERT INTO credit_payments(id,owner_id,sale_id,amount,created_at) VALUES(?,?,?,?,?)", arrayOf(paymentId,ownerId,saleId,amount,now))
+            db.execSQL("INSERT INTO cash_movements(sale_id,owner_id,amount,created_at,direction,category,note) VALUES(?,?,?,?,'in','credit',?)", arrayOf(paymentId,ownerId,amount,now,"Angsuran kasbon"))
+            if (amount == remaining) db.execSQL("DELETE FROM receivables WHERE sale_id=? AND owner_id=?", arrayOf(saleId,ownerId))
+            else db.execSQL("UPDATE receivables SET amount_remaining=amount_remaining-? WHERE sale_id=? AND owner_id=?", arrayOf(amount,saleId,ownerId))
+            db.setTransactionSuccessful()
+            remaining - amount
+        } finally { db.endTransaction() }
+    }
+
     /** Reads only this owner's immutable transaction snapshots; filters describe the original payment. */
     suspend fun saleHistory(
         start: Long?, end: Long?, filter: SaleHistoryFilter, after: SaleCursor? = null, limit: Int = 25,
@@ -252,11 +296,18 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
     suspend fun checkout(id: String, lines: List<CashierLine>, received: Int, customer: String): CheckoutResult =
         recordSale(id, lines, received, customer, "cash")
 
+    suspend fun checkoutCredit(id: String, lines: List<CashierLine>, received: Int, customer: String, phone: String, dueAt: Long?, remind: Boolean): CheckoutResult {
+        require(normalizeWhatsapp(phone) != null && customer.isNotBlank())
+        require(lines.sumOf { it.product.price.toLong() * it.quantity } > received)
+        require(!remind || dueAt != null)
+        return recordSale(id, lines, received, customer, "cash", normalizeWhatsapp(phone), dueAt, remind)
+    }
+
     // QR generation records a full-value sale, but does not verify that payment occurred.
     suspend fun checkoutQris(id: String, lines: List<CashierLine>): CheckoutResult =
         recordSale(id, lines, 0, "", "qris")
 
-    private suspend fun recordSale(id: String, lines: List<CashierLine>, received: Int, customer: String, method: String): CheckoutResult = withContext(Dispatchers.IO) {
+    private suspend fun recordSale(id: String, lines: List<CashierLine>, received: Int, customer: String, method: String, phone: String? = null, dueAt: Long? = null, remind: Boolean = false): CheckoutResult = withContext(Dispatchers.IO) {
         require(method == "cash" || method == "qris")
         require(lines.isNotEmpty() && received >= 0 && lines.all { it.quantity > 0 })
         require(lines.map { it.product.id }.distinct().size == lines.size)
@@ -298,7 +349,7 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
             }
             if (received > 0) db.execSQL("INSERT INTO cash_movements (sale_id, owner_id, amount, created_at, direction, category) VALUES (?, ?, ?, ?, 'in', 'sale')", arrayOf(id, ownerId, settlement.paid, createdAt))
             if (method == "qris") db.execSQL("INSERT INTO qris_records (sale_id, owner_id, created_at, amount) VALUES (?, ?, ?, ?)", arrayOf(id, ownerId, createdAt, total))
-            if (debt > 0) db.execSQL("INSERT INTO receivables (sale_id, owner_id, customer, amount_remaining) VALUES (?, ?, ?, ?)", arrayOf(id, ownerId, name, debt))
+            if (debt > 0) db.execSQL("INSERT INTO receivables (sale_id, owner_id, customer, amount_remaining, phone, due_at, remind) VALUES (?, ?, ?, ?, ?, ?, ?)", arrayOf(id, ownerId, name, debt, phone, dueAt, if (remind) 1 else 0))
             db.setTransactionSuccessful()
             CheckoutResult(total, received, change, debt, if (debt > 0) name else null)
         } finally { db.endTransaction() }

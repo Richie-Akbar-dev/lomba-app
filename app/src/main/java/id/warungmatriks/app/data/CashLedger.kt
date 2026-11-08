@@ -23,6 +23,7 @@ internal fun cashWeek(now: Long = System.currentTimeMillis(), zone: TimeZone = T
 
 internal fun cashCategoryLabel(category: String): String = when (category) {
     "sale" -> "Penjualan tunai"
+    "credit" -> "Angsuran kasbon"
     "initial" -> "Modal awal"
     "deposit" -> "Setoran tunai"
     "purchase" -> "Kulakan"

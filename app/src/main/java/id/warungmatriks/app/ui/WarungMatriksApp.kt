@@ -33,9 +33,10 @@ internal fun WarungMatriksApp(account: SignedInAccount, onSignOut: () -> Unit, s
         restore = { names -> names.map { Screen.valueOf(it) }.toMutableStateList() },
     )) { mutableStateListOf() }
     val cashierState = remember { CashierState() }
+    var pendingCredit by remember(account.uid) { mutableStateOf<PendingCredit?>(null) }
     var editingProductId by rememberSaveable(account.uid) { mutableStateOf<String?>(null) }
     fun navigate(next: Screen) { if (screen != next) { backStack.add(screen); screen = next } }
-    fun back() { screen = if (backStack.isNotEmpty()) backStack.removeAt(backStack.lastIndex) else Screen.KASIR }
+    fun back() { if (screen == Screen.KASBON) pendingCredit = null; screen = if (backStack.isNotEmpty()) backStack.removeAt(backStack.lastIndex) else Screen.KASIR }
     BackHandler(enabled = screen !in mainScreens) { back() }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -51,14 +52,19 @@ internal fun WarungMatriksApp(account: SignedInAccount, onSignOut: () -> Unit, s
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
-                Screen.KASIR -> CashierScreen(cashierState, ownerId = account.uid, cashierName = account.shop.ownerName, onNotifications = { navigate(Screen.NOTIFIKASI) }, onAccount = { navigate(Screen.AKUN) }, onCash = { navigate(Screen.KAS) }, onInventory = { navigate(Screen.BARANG) }, onAddProduct = { editingProductId = null; navigate(Screen.TAMBAH) })
+                Screen.KASIR -> CashierScreen(cashierState, ownerId = account.uid, cashierName = account.shop.ownerName, onNotifications = { navigate(Screen.NOTIFIKASI) }, onAccount = { navigate(Screen.AKUN) }, onCash = { navigate(Screen.KAS) }, onInventory = { navigate(Screen.BARANG) }, onAddProduct = { editingProductId = null; navigate(Screen.TAMBAH) }, onCredit = { pendingCredit = null; navigate(Screen.KASBON) }, onCreditCheckout = { pendingCredit = it; navigate(Screen.KASBON) })
                 Screen.PESANAN -> OrdersScreen(ownerId = account.uid)
                 Screen.BARANG -> InventoryScreen(ownerId = account.uid, onAdd = { editingProductId = null; navigate(Screen.TAMBAH) }, onEdit = { editingProductId = it; navigate(Screen.TAMBAH) })
                 Screen.LAPORAN -> ReportsScreen()
                 Screen.AKUN -> AccountScreen(account = account, onSignOut = onSignOut, signOutBusy = signOutBusy, signOutError = signOutError, onNotifications = { navigate(Screen.NOTIFIKASI) })
                 Screen.NOTIFIKASI -> NotificationsScreen(ownerId = account.uid, onBack = { back() }, onCredit = { navigate(Screen.KASBON) })
                 Screen.KAS -> CashLedgerScreen(ownerId = account.uid, onBack = { back() })
-                Screen.KASBON -> CreditScreen(onBack = { back() })
+                Screen.KASBON -> CreditScreen(ownerId = account.uid, pending = pendingCredit, onBack = { back() }, onSaved = { result ->
+                    cashierState.quantities.clear(); cashierState.cashText = ""; cashierState.customer = ""
+                    cashierState.checkoutId = java.util.UUID.randomUUID().toString()
+                    cashierState.receipt = result
+                    pendingCredit = null; back()
+                })
                 Screen.TAMBAH -> AddProductScreen(ownerId = account.uid, productId = editingProductId, onBack = { back() })
             }
         }

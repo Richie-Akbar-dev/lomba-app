@@ -77,48 +77,7 @@ private fun BinaryDialog(onClose: () -> Unit) {
         }, confirmButton = { TextButton(onClick = onClose) { Text("Tutup") } })
 }
 
-@Composable
-internal fun CreditScreen(onBack: () -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf("") }
-    var detail by remember { mutableStateOf("") }
-    var paid by remember { mutableStateOf("") }
-    var notice by remember { mutableStateOf(false) }
-    DemoPage("Kasbon pelanggan", "Catat & riwayat • contoh", onBack) {
-        GroupTitle("Catat kasbon pelanggan", "Formulir demonstrasi")
-        DemoCard {
-            FormField("Nama pembeli", name, { name = it }, "Contoh: Mas Doni")
-            Spacer(Modifier.height(10.dp)); FormField("Nominal kasbon (Rp)", amount, { amount = it.filter(Char::isDigit) }, "0", true)
-            Spacer(Modifier.height(10.dp)); FormField("Daftar barang", detail, { detail = it }, "Contoh: beras dan minyak")
-            Spacer(Modifier.height(10.dp)); FormField("Dibayar di awal (Rp)", paid, { paid = it.filter(Char::isDigit) }, "0", true)
-            Spacer(Modifier.height(12.dp)); DemoNote("Tanggal, kontak dan pengingat akan dirancang pada tahap fitur.")
-            Spacer(Modifier.height(10.dp)); Button(onClick = { notice = true }, modifier = Modifier.fillMaxWidth()) { Text("Simpan kasbon (demo)") }
-        }
-        SectionGap(); GroupTitle("Total kasbon belum lunas")
-        DemoCard { Text("Rp79.500", fontWeight = FontWeight.Bold, fontSize = 23.sp, color = Blue); Text("2 pelanggan • data contoh", fontSize = 12.sp, color = Muted) }
-        SectionGap(); GroupTitle("Riwayat kasbon berjalan")
-        CreditCard("Mas Doni", "Kasbon Rp29.500 • dibayar Rp10.000", "Sisa Rp19.500")
-        Spacer(Modifier.height(10.dp)); CreditCard("Bu RT Siti", "Kasbon belum lunas", "Sisa Rp60.000")
-        Spacer(Modifier.height(16.dp)); DemoNote("Belum ada penyimpanan, penagihan, pengingat, atau pembayaran kasbon sungguhan.")
-    }
-    if (notice) DemoDialog("Belum menyimpan", "Kasbon ini hanya contoh tampilan dan tidak dicatat.") { notice = false }
-}
-
-@Composable
-private fun CreditCard(name: String, description: String, remaining: String) {
-    DemoCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.PersonOutline, null, tint = Blue)
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) { Text(name, fontWeight = FontWeight.Bold); Text(description, fontSize = 12.sp, color = Muted) }
-        }
-        Spacer(Modifier.height(10.dp)); DemoLabel(remaining)
-    }
-}
-
 @Preview(showBackground = true, widthDp = 360, heightDp = 800)
 @Composable private fun AccountPreview() {
     WarungMatriksTheme { AccountScreen(SignedInAccount("demo", "Pemilik Demo", "", ShopProfile("Pemilik Demo", "Warung Matriks", "Warung")), {}, false, null, {}) }
 }
-@Preview(showBackground = true, widthDp = 360, heightDp = 800)
-@Composable private fun CreditPreview() { WarungMatriksTheme { CreditScreen({}) } }

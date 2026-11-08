@@ -296,6 +296,7 @@ class CashierStoreTest {
         before.writableDatabase.execSQL("CREATE TABLE cash_movements (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, amount INTEGER NOT NULL)")
         before.writableDatabase.execSQL("INSERT INTO cash_movements SELECT sale_id,owner_id,amount FROM cash_movements_v5")
         before.writableDatabase.execSQL("DROP TABLE cash_movements_v5")
+        downgradeCreditToV5(before)
         before.writableDatabase.version = 3
         before.close()
         val after = CashierStore(context, "owner", dbName)
@@ -378,6 +379,7 @@ class CashierStoreTest {
         db.execSQL("CREATE TABLE cash_movements (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, amount INTEGER NOT NULL)")
         db.execSQL("INSERT INTO cash_movements SELECT sale_id,owner_id,amount FROM cash_movements_v5")
         db.execSQL("DROP TABLE cash_movements_v5")
+        downgradeCreditToV5(before)
         db.version = 4
         before.close()
         val after = CashierStore(context, "owner", dbName)
@@ -390,6 +392,75 @@ class CashierStoreTest {
             after.readableDatabase.rawQuery("SELECT amount FROM qris_records WHERE sale_id='old-qris'", null).use { assertTrue(it.moveToFirst()); assertEquals(5000, it.getInt(0)) }
             assertEquals(2, after.stocks().getValue("legacy"))
         } finally { after.close(); context.deleteDatabase(dbName) }
+    }
+
+    // Build an actual pre-v6 credit schema when exercising old-version migrations.
+    private fun downgradeCreditToV5(store: CashierStore) {
+        val db = store.writableDatabase
+        db.execSQL("DROP TABLE credit_payments")
+        db.execSQL("ALTER TABLE receivables RENAME TO receivables_v6")
+        db.execSQL("CREATE TABLE receivables (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, customer TEXT NOT NULL, amount_remaining INTEGER NOT NULL)")
+        db.execSQL("INSERT INTO receivables SELECT sale_id,owner_id,customer,amount_remaining FROM receivables_v6")
+        db.execSQL("DROP TABLE receivables_v6")
+    }
+
+    @Test fun creditCheckoutAndInstallmentsAreAtomicAndAccountScoped() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "credit-" + UUID.randomUUID() + ".db"
+        val owner = CashierStore(context, "owner", dbName)
+        val other = CashierStore(context, "other", dbName)
+        try {
+            val item = Product("credit-item", "Barang", 5000, null, 5)
+            owner.saveProduct(item)
+            try { owner.checkoutCredit("bad", listOf(CashierLine(item, 1)), 1000, "Nama", "", null, false); fail("Phone required") } catch (_: IllegalArgumentException) { }
+            assertEquals(5, owner.stocks().getValue(item.id))
+            owner.checkoutCredit("sale", listOf(CashierLine(item, 1)), 1000, "Nama", "08123456789", null, false)
+            owner.checkoutCredit("sale", listOf(CashierLine(item, 1)), 1000, "Nama", "08123456789", null, false)
+            assertEquals(4, owner.stocks().getValue(item.id))
+            assertEquals("628123456789", owner.creditDetails().single().phone)
+            assertTrue(other.creditDetails().isEmpty())
+            try { other.payCredit("other-payment", "sale", 500); fail("Other owner cannot pay") } catch (_: IllegalStateException) { }
+            try { owner.payCredit("too-much", "sale", 4001); fail("Overpayment rejected") } catch (_: IllegalArgumentException) { }
+            assertEquals(4000, owner.creditDetails().single().remaining)
+            assertEquals(3000, owner.payCredit("p1", "sale", 1000))
+            assertEquals(3000, owner.payCredit("p1", "sale", 1000))
+            assertEquals(0, owner.payCredit("p2", "sale", 3000))
+            assertEquals(0, owner.payCredit("p2", "sale", 3000))
+            assertTrue(owner.creditDetails().isEmpty())
+            val cash = owner.cashSummary(CashWeek(0, System.currentTimeMillis() + 60000))
+            assertEquals(5000L, cash.cashIn)
+        } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun upgradeV5PreservesLegacyCreditWithoutInventingPhone() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "credit-v5-" + UUID.randomUUID() + ".db"
+        val before = CashierStore(context, "owner", dbName)
+        val item = Product("old", "Barang", 5000, null, 2)
+        before.saveProduct(item)
+        before.checkout("old-sale", listOf(CashierLine(item, 1)), 0, "Pelanggan")
+        downgradeCreditToV5(before); before.writableDatabase.version = 5; before.close()
+        val after = CashierStore(context, "owner", dbName)
+        try {
+            assertEquals(5000, after.creditDetails().single().remaining)
+            assertNull(after.creditDetails().single().phone)
+            assertEquals(0, after.payCredit("legacy-pay", "old-sale", 5000))
+        } finally { after.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun creditPaymentRollsBackIfCashInsertFails() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "credit-rollback-" + UUID.randomUUID() + ".db"
+        val store = CashierStore(context, "owner", dbName)
+        try {
+            val product = Product("credit", "Barang", 5000, null, 2)
+            store.saveProduct(product)
+            store.checkoutCredit("sale", listOf(CashierLine(product, 1)), 0, "Siti", "08123456789", null, false)
+            store.writableDatabase.execSQL("CREATE TRIGGER fail_credit_cash BEFORE INSERT ON cash_movements WHEN NEW.category='credit' BEGIN SELECT RAISE(ABORT, 'test failure'); END")
+            try { store.payCredit("pay", "sale", 1000); fail("Payment must roll back") } catch (_: android.database.sqlite.SQLiteException) { }
+            assertEquals(5000, store.creditDetails().single().remaining)
+            store.readableDatabase.rawQuery("SELECT COUNT(*) FROM credit_payments", null).use { it.moveToFirst(); assertEquals(0, it.getInt(0)) }
+        } finally { store.close(); context.deleteDatabase(dbName) }
     }
 
 }
