@@ -34,6 +34,7 @@ import id.warungmatriks.app.data.rupiah
 import id.warungmatriks.app.data.calculateCartTotals
 import id.warungmatriks.app.data.CashierLine
 import id.warungmatriks.app.data.CashierStore
+import id.warungmatriks.app.data.QrisSettings
 import id.warungmatriks.app.data.CheckoutResult
 import id.warungmatriks.app.data.CashSummary
 import id.warungmatriks.app.data.cashWeek
@@ -260,7 +261,10 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
                 state.qrisTotal = total
                 state.qrisLines = items.map { CashierLine(it, quantities[it.id] ?: 0) }
                 state.qrisSaleId = state.checkoutId
-                state.showQris = true
+                try {
+                    state.qrisSource = if (inspection) "" else QrisSettings(context, ownerId).payload().orEmpty()
+                    state.showQris = true
+                } catch (_: Exception) { state.notice = "Pengaturan QRIS belum dapat dibaca. Coba lagi." }
             }, enabled = state.ready && total > 0 && !totals.exceedsLimit && !state.processing,
                 modifier = Modifier.weight(1f).height(52.dp), shape = RoundedCornerShape(13.dp), contentPadding = PaddingValues(horizontal = 4.dp)) {
                 Text("Tampilkan QRIS", fontWeight = FontWeight.Bold, fontSize = 12.sp)

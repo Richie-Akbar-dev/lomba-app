@@ -1,6 +1,8 @@
 package id.warungmatriks.app.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -8,6 +10,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -15,6 +19,8 @@ import androidx.compose.ui.unit.sp
 import id.warungmatriks.app.ui.theme.*
 import id.warungmatriks.app.auth.ShopProfile
 import id.warungmatriks.app.auth.SignedInAccount
+import id.warungmatriks.app.data.QrisSettings
+import id.warungmatriks.app.data.encodeBinaryQris
 
 @Composable
 internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, signOutBusy: Boolean, signOutError: String?, onNotifications: () -> Unit, onSaveProfile: (ShopProfile) -> Boolean = { false }) {
@@ -34,7 +40,7 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
         DemoCard {
             MenuRow(Icons.Default.Storefront, "Profil toko", "Ubah nama pemilik, nama warung & jenis usaha") { editingProfile = true }
             HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Line)
-            MenuRow(Icons.Default.QrCode, "Metode pembayaran", "QRIS, transfer & tunai") { binary = true }
+            MenuRow(Icons.Default.QrCode, "QRIS toko", "Atur kode biner QRIS statis") { binary = true }
             HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Line)
             MenuRow(Icons.Default.NotificationsNone, "Notifikasi", "Pengingat & aktivitas toko") { onNotifications() }
         }
@@ -60,7 +66,9 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
         if (saved) { editingProfile = false; info = "Profil toko berhasil disimpan di perangkat." }
         saved
     })
-    if (binary) BinaryDialog(onClose = { binary = false })
+    if (binary) BinaryDialog(ownerId = account.uid, onClose = { binary = false }, onSaved = {
+        binary = false; info = "Kode QRIS tersimpan di perangkat untuk akun ini. Periksa identitas penerima dan uji dengan penyedia sebelum digunakan."
+    })
     if (confirmSignOut) AlertDialog(
         onDismissRequest = { confirmSignOut = false }, title = { Text("Keluar akun?") },
         text = { Text("Anda memerlukan internet dan akun Google untuk masuk kembali. Profil warung tetap tersimpan di perangkat ini; belum ada sinkronisasi atau backup.") },
@@ -95,17 +103,38 @@ private fun EditShopProfileDialog(profile: ShopProfile, onClose: () -> Unit, onS
 }
 
 @Composable
-private fun BinaryDialog(onClose: () -> Unit) {
-    var input by remember { mutableStateOf("") }
-    AlertDialog(onDismissRequest = onClose,
-        title = { Text("Masukkan kode biner") },
-        text = {
-            Column {
-                DemoNote("Pratinjau desain dari referensi. Fungsi dan kaitannya dengan QRIS belum ditentukan; jangan masukkan data pembayaran.")
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(value = input, onValueChange = { input = it.filter { c -> c == '0' || c == '1' || c == ' ' }.take(64) }, label = { Text("Kode biner contoh") }, singleLine = true)
-            }
-        }, confirmButton = { TextButton(onClick = onClose) { Text("Tutup") } })
+private fun BinaryDialog(ownerId: String, onClose: () -> Unit, onSaved: () -> Unit) {
+    val context = LocalContext.current
+    val inspection = LocalInspectionMode.current
+    val settings = remember(context, ownerId) { QrisSettings(context, ownerId) }
+    var hasSaved by remember(settings) { mutableStateOf(!inspection && settings.payload() != null) }
+    var input by remember(settings) { mutableStateOf(if (inspection) "" else settings.payload()?.let(::encodeBinaryQris).orEmpty()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var confirmReset by remember { mutableStateOf(false) }
+    AlertDialog(onDismissRequest = onClose, title = { Text("Kode biner QRIS") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState())) {
+            DemoNote("Tempel isi QRIS statis sebagai biner ASCII, 8 angka 0 atau 1 per karakter. Spasi dan baris baru boleh digunakan.")
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(value = input, onValueChange = { value -> if (value.length <= 24_576) { input = value; error = null } else error = "Kode biner terlalu panjang." },
+                label = { Text("Kode biner QRIS") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 220.dp), maxLines = 8)
+            Spacer(Modifier.height(8.dp))
+            DemoNote("Pemeriksaan hanya untuk format dan CRC. Ini tidak memverifikasi identitas penerima atau pembayaran. Data disimpan lokal, terpisah per akun.")
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+            TextButton(onClick = { if (hasSaved) confirmReset = true else { input = ""; error = null } }) { Text("Reset kode") }
+        }
+    }, confirmButton = { TextButton(enabled = input.isNotBlank(), onClick = {
+        try {
+            if (settings.saveBinary(input)) onSaved() else error = "Kode belum dapat disimpan. Coba lagi."
+        } catch (e: IllegalArgumentException) { error = e.message ?: "Kode tidak sesuai format QRIS." } catch (_: Exception) { error = "Kode belum dapat disimpan. Coba lagi." }
+    }) { Text("Periksa format & simpan") } }, dismissButton = { TextButton(onClick = onClose) { Text("Batal") } })
+    if (confirmReset) AlertDialog(onDismissRequest = { confirmReset = false }, title = { Text("Hapus kode QRIS tersimpan?") },
+        text = { Text("Kode akan dihapus dari perangkat untuk akun ini. Riwayat penjualan tidak berubah.") },
+        confirmButton = { TextButton(onClick = {
+            try {
+                if (settings.clear()) { input = ""; hasSaved = false; error = null; confirmReset = false }
+                else { confirmReset = false; error = "Kode belum dapat dihapus." }
+            } catch (_: Exception) { confirmReset = false; error = "Kode belum dapat dihapus." }
+        }) { Text("Hapus") } }, dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("Batal") } })
 }
 
 @Preview(showBackground = true, widthDp = 360, heightDp = 800)

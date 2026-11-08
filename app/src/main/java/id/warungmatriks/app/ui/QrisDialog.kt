@@ -43,7 +43,7 @@ internal fun QrisDialog(total: Int, source: String, onSourceChange: (String) -> 
         title = { Text("QRIS • ${rupiah(total)}") },
         text = {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Masukkan teks payload QRIS statis milik toko (bukan foto QR). Data digunakan di perangkat dan tidak dikirim oleh aplikasi.", fontSize = 12.sp, color = Muted, lineHeight = 18.sp)
+                Text("Payload QRIS statis dari pengaturan akun terisi otomatis jika tersedia. Perubahan di sini hanya untuk transaksi ini dan tidak mengubah kode tersimpan.", fontSize = 12.sp, color = Muted, lineHeight = 18.sp)
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(value = source, onValueChange = { onSourceChange(it.take(2048)); image = null; error = null }, label = { Text("Payload QRIS statis") }, enabled = !busy && !recorded, modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 160.dp), maxLines = 4)
                 Spacer(Modifier.height(12.dp))
