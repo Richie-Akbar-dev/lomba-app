@@ -122,42 +122,46 @@ fun AuthEntry() {
 @Composable
 private fun AuthLayout(title: String, subtitle: String, content: @Composable ColumnScope.() -> Unit) {
     Column(
-        modifier = Modifier.fillMaxSize().background(Background).verticalScroll(rememberScrollState()).padding(24.dp),
+        modifier = Modifier.fillMaxSize().background(Background).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
     ) {
         Spacer(Modifier.height(24.dp))
-        Image(painterResource(R.drawable.warung_matriks_logo), "Logo Warung Matriks", modifier = Modifier.size(120.dp))
+        Image(painterResource(R.drawable.warung_matriks_logo), "Logo Warung Matriks", modifier = Modifier.size(88.dp))
+        Spacer(Modifier.height(10.dp))
         Text("Warung Matriks", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold, color = Ink)
-        Text("Kasir & pembukuan warung", fontSize = 13.sp, color = Muted)
-        Spacer(Modifier.height(30.dp))
-        DemoCard {
-            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
-            Spacer(Modifier.height(6.dp))
-            Text(subtitle, fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), lineHeight = 19.sp)
-            Spacer(Modifier.height(20.dp))
-            content()
+        Text("Aplikasi Kasir & Pembukuan Warung", fontSize = 13.sp, color = Muted, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(32.dp))
+        Surface(color = White, shape = RoundedCornerShape(20.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Line), shadowElevation = 1.dp) {
+            Column(Modifier.fillMaxWidth().padding(22.dp)) {
+                Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                Spacer(Modifier.height(8.dp))
+                Text(subtitle, fontSize = 14.sp, color = Muted, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), lineHeight = 21.sp)
+                Spacer(Modifier.height(24.dp))
+                content()
+            }
         }
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(28.dp))
+        Text("Warung Matriks • Kasir & pembukuan warung", fontSize = 11.sp, color = Muted, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(16.dp))
     }
 }
 
 @Composable
 internal fun GoogleLoginScreen(configured: Boolean, busy: Boolean, error: String?, onSignIn: () -> Unit) {
-    AuthLayout("Selamat datang", "Masuk atau daftar dengan akun Google untuk mulai menggunakan Warung Matriks.") {
+    AuthLayout("Selamat Datang", "Masuk atau daftar dengan akun Google untuk mulai menggunakan Warung Matriks.") {
         if (!configured) {
-            Surface(color = Background, shape = RoundedCornerShape(10.dp)) {
+            Surface(color = LightSurface, shape = RoundedCornerShape(10.dp)) {
                 Text("Google Sign-In belum dikonfigurasi. Ikuti langkah konfigurasi pada README sebelum masuk.", Modifier.padding(12.dp), color = Ink, fontSize = 12.sp, lineHeight = 17.sp)
             }
             Spacer(Modifier.height(12.dp))
         }
-        OutlinedButton(onClick = onSignIn, enabled = configured && !busy, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(12.dp)) {
+        OutlinedButton(onClick = onSignIn, enabled = configured && !busy, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(12.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Line)) {
             if (busy) { CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp); Spacer(Modifier.width(10.dp)) }
-            else { Text("G", color = Blue, fontWeight = FontWeight.Bold, fontSize = 20.sp); Spacer(Modifier.width(12.dp)) }
-            Text(if (busy) "Menghubungkan..." else "Lanjutkan dengan Google", fontWeight = FontWeight.SemiBold)
+            else { Text("G", color = Blue, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp); Spacer(Modifier.width(12.dp)) }
+            Text(if (busy) "Menghubungkan..." else "Masuk dengan Google", fontWeight = FontWeight.Bold, color = if (configured && !busy) Ink else Muted)
         }
         error?.let { Spacer(Modifier.height(12.dp)); Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error, lineHeight = 17.sp) }
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(18.dp))
         Text("Masuk pertama memerlukan internet. Setelah masuk, aplikasi dapat dibuka kembali secara offline pada perangkat ini.", fontSize = 12.sp, color = Muted, lineHeight = 18.sp)
     }
 }
@@ -167,20 +171,21 @@ internal fun ShopSetupScreen(ownerSuggestion: String, busy: Boolean, error: Stri
     var owner by rememberSaveable { mutableStateOf(ownerSuggestion.take(80)) }
     var shop by rememberSaveable { mutableStateOf("") }
     var kind by rememberSaveable { mutableStateOf("Warung") }
-    AuthLayout("Siapkan warung", "Lengkapi profil warung untuk perangkat ini. Data profil disimpan di perangkat.") {
-        FormField("Nama pemilik", owner, { owner = it.take(80) }, "Nama pemilik")
-        Spacer(Modifier.height(10.dp))
-        FormField("Nama warung", shop, { shop = it.take(80) }, "Nama warung")
+    AuthLayout("Siapkan Warung", "Lengkapi profil warung untuk perangkat ini. Data profil disimpan di perangkat.") {
+        FormField("Nama pemilik *", owner, { owner = it.take(80) }, "Contoh: Bu Sri")
         Spacer(Modifier.height(12.dp))
-        Text("Jenis usaha", fontSize = 12.sp, color = Muted)
+        FormField("Nama warung / toko *", shop, { shop = it.take(80) }, "Contoh: Warung Barokah")
+        Spacer(Modifier.height(18.dp))
+        Text("Pilih jenis usaha", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Ink)
+        Spacer(Modifier.height(6.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             listOf("Warung", "Minuman", "Lainnya").forEach { type ->
                 FilterChip(selected = kind == type, onClick = { kind = type }, label = { Text(type, fontSize = 11.sp) })
             }
         }
-        Spacer(Modifier.height(8.dp))
-        Button(onClick = { onSave(ShopProfile(owner.trim(), shop.trim(), kind)) }, enabled = !busy && owner.isNotBlank() && shop.isNotBlank(), modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(12.dp)) {
-            Icon(Icons.Default.Storefront, null, modifier = Modifier.size(19.dp)); Spacer(Modifier.width(8.dp)); Text("Mulai gunakan aplikasi")
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = { onSave(ShopProfile(owner.trim(), shop.trim(), kind)) }, enabled = !busy && owner.isNotBlank() && shop.isNotBlank(), modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(12.dp)) {
+            Icon(Icons.Default.Storefront, null, modifier = Modifier.size(19.dp)); Spacer(Modifier.width(8.dp)); Text("Simpan & Buka Kasir", fontWeight = FontWeight.Bold)
         }
         TextButton(onClick = onSignOut, enabled = !busy, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Gunakan akun lain") }
         error?.let { Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error) }

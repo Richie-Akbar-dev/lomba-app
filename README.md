@@ -1,6 +1,6 @@
 # Warung Matriks — prototipe Android
 
-Aplikasi Android native berbasis Kotlin, Jetpack Compose dan Material 3. Prototipe mencakup alur masuk Google, profil lokal, katalog dan kasir lokal; sebagian halaman lain masih menggunakan data demo. Logo pengguna dipertahankan. Warna utama: `#2563EB`, `#38BDF8`, `#F1F5F9`, dan `#FFFFFF`.
+Aplikasi Android native berbasis Kotlin, Jetpack Compose dan Material 3. Prototipe mencakup alur masuk Google, profil lokal, katalog dan kasir lokal; sebagian halaman lain masih menggunakan data demo. Logo pengguna dipertahankan. Tema visual mengikuti Fidelity Modern: biru utama `#003670`, biru pendukung `#425F8C`, latar `#F9F9FF`, dan kartu `#FFFFFF`. Font Inter disertakan secara lokal dari Google Fonts; lisensinya tersedia di `licenses/Inter-OFL.txt`.
 
 ## Buka proyek
 
@@ -63,6 +63,7 @@ Cari Preview di file `ui/SplashScreen.kt`, `ui/AuthScreens.kt`, `ui/WarungMatrik
 
 - Barang disimpan per UID akun di SQLite pada perangkat, bersama stok, transaksi tunai dan kasbon. Katalog inventaris dan kasir membaca sumber yang sama. Saat pertama digunakan, **empat barang contoh otomatis ditambahkan** untuk mempertahankan data stok prototipe sebelumnya; bukan data toko sebenarnya. Barang contoh dapat diubah atau dinonaktifkan.
 - Tambah Barang dapat dibuka dari Kasir maupun Barang dan memakai formulir yang sama: nama dan harga jual wajib, satuan pcs; kategori dapat ditulis sendiri, barcode opsional harus unik per akun, stok awal dan batas minimum tidak negatif. Stok awal tidak otomatis menjadi catatan kulakan atau kas keluar.
+- Kategori pada Kasir dan Barang disusun dari data barang yang tersedia. Memilih kategori memfilter daftar; pemindaian barcode kembali ke Semua agar hasil dari kategori lain tetap dapat ditemukan.
 - Barcode barang dapat diketik atau dipindai dengan kamera saat menambah/mengedit. Kasir dan Barang dapat mencari nama/barcode secara manual atau memindai barcode satu dimensi secara offline; hasil pindai cocok persis dan tidak otomatis memasukkan barang ke keranjang. Nol di depan barcode dipertahankan. Pemindai memerlukan izin kamera dan mendukung format satu dimensi umum, bukan QRIS; jika izin ditolak, input manual tetap dapat digunakan. Kompatibilitas kamera dan barcode perlu diuji di perangkat.
 - Modal boleh kosong dan berarti tidak diketahui, bukan Rp0. Jika modal diketahui dan harga jual lebih rendah, form memperingatkan pengguna. Laba kotor tidak dihitung untuk keranjang dengan modal yang tidak diketahui.
 - Foto opsional dapat dipilih dari galeri atau diambil lewat aplikasi kamera perangkat. Foto diubah ukurannya dan disimpan di penyimpanan privat aplikasi; tanpa foto dipakai ikon barang (barang contoh memiliki ilustrasi bawaan). Edit foto mengganti gambar di katalog. Foto kamera menggunakan aplikasi kamera dan URI privat melalui FileProvider; izin kamera diminta saat diperlukan. Kompatibilitas perlu diuji di perangkat.

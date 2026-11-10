@@ -31,9 +31,28 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
     DemoPage("Akun & Pengaturan", "Profil tersimpan di perangkat") {
         DemoCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(color = PaleBlue, shape = RoundedCornerShape(16.dp)) { Icon(Icons.Default.Person, null, tint = Blue, modifier = Modifier.padding(14.dp).size(32.dp)) }
+                Surface(color = PaleBlue, shape = RoundedCornerShape(50)) { Icon(Icons.Default.Person, null, tint = Blue, modifier = Modifier.padding(14.dp).size(32.dp)) }
                 Spacer(Modifier.width(14.dp))
-                Column { Text(account.shop.ownerName, fontSize = 18.sp, fontWeight = FontWeight.Bold); Text(account.shop.shopName, fontSize = 13.sp, color = Muted); if (account.email.isNotBlank()) Text(account.email, fontSize = 12.sp, color = Muted); Spacer(Modifier.height(5.dp)); DemoLabel(account.shop.businessType) }
+                Column(Modifier.weight(1f)) {
+                    Text(account.shop.ownerName, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Ink)
+                    Spacer(Modifier.height(3.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Storefront, contentDescription = null, tint = Blue, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text(account.shop.shopName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Blue)
+                    }
+                    if (account.email.isNotBlank()) Text(account.email, fontSize = 12.sp, color = Muted, maxLines = 1)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            Surface(color = LightSurface, shape = RoundedCornerShape(10.dp)) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Jenis usaha", color = Muted, fontSize = 11.sp)
+                        Text(account.shop.businessType, color = Blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    }
+                    TextButton(onClick = { editingProfile = true }) { Text("Edit profil") }
+                }
             }
         }
         SectionGap(); GroupTitle("Manajemen toko & kasir")

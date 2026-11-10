@@ -8,6 +8,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -37,7 +40,7 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 @Composable
-internal fun InventoryScreen(ownerId: String, onAdd: () -> Unit, onEdit: (String) -> Unit) {
+internal fun InventoryScreen(ownerId: String, onAdd: () -> Unit, onEdit: (String) -> Unit, shopName: String = "Warung Matriks", onNotifications: () -> Unit = {}, onAccount: () -> Unit = {}) {
     val context = LocalContext.current
     val inspection = LocalInspectionMode.current
     val store = remember(context, ownerId) { CashierStore(context, ownerId) }
@@ -53,51 +56,104 @@ internal fun InventoryScreen(ownerId: String, onAdd: () -> Unit, onEdit: (String
     LaunchedEffect(store, inspection) {
         try { products = if (inspection) DemoData.products else store.products() } catch (e: CancellationException) { throw e } catch (_: Exception) { message = "Daftar barang belum dapat dibuka." }
     }
-    val scanBarcode = rememberBarcodeScanner(onScanned = { query = it; exactBarcode = true; message = null }, onError = { message = it })
-    val list = products.filter { it.matchesSearch(query, exactBarcode) }
+    var categoryFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    val scanBarcode = rememberBarcodeScanner(onScanned = { query = it; exactBarcode = true; categoryFilter = null; message = null }, onError = { message = it })
+    val list = products.filter { it.matchesCatalogFilter(query, exactBarcode, categoryFilter) }
     val low = products.filter { it.needsRestock() }
-    DemoPage("Daftar Barang", "Inventaris tersimpan di perangkat", badgeText = "DATA LOKAL") {
-        OutlinedTextField(value = query, onValueChange = { query = it; exactBarcode = false }, singleLine = true, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp),
-            leadingIcon = { Icon(Icons.Default.Search, null) },
-            trailingIcon = { IconButton(onClick = scanBarcode) { Icon(Icons.Default.QrCodeScanner, "Pindai barcode barang") } },
-            placeholder = { Text("Cari nama atau barcode...") })
+    Column(Modifier.fillMaxSize().background(Background).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
         Spacer(Modifier.height(12.dp))
-        DemoNote("Katalog awal berisi barang contoh, bukan data toko Anda. Periksa, ubah, atau nonaktifkan sebelum digunakan.")
-        Button(onClick = onAdd, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp)) { Icon(Icons.Default.Add, null); Text(" Tambah barang") }
-        SectionGap(); GroupTitle("Melewati batas stok", "Stok ≤ batas minimum")
-        DemoCard {
-            DemoLabel("${low.size} perlu kulak")
-            if (low.isEmpty()) { Spacer(Modifier.height(8.dp)); DemoNote("Belum ada barang yang perlu kulak.") }
-            low.forEach { product -> Spacer(Modifier.height(8.dp)); InfoLine(product.name, "${product.stock} / min ${product.minimumStock} pcs") }
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Surface(color = Blue, shape = RoundedCornerShape(12.dp)) {
+                Icon(Icons.Default.Storefront, contentDescription = null, tint = White, modifier = Modifier.padding(10.dp))
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Warung Matriks • $shopName", color = Ink, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("Barang", color = Muted, fontSize = 11.sp)
+            }
+            IconButton(onClick = onNotifications) { Icon(Icons.Default.NotificationsNone, "Notifikasi", tint = Ink) }
+            IconButton(onClick = onAccount, modifier = Modifier.size(38.dp).background(Blue, CircleShape)) { Icon(Icons.Default.Person, "Akun", tint = White) }
         }
-        SectionGap(); GroupTitle("Daftar inventaris", "${list.size} barang")
+        Spacer(Modifier.height(18.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(value = query, onValueChange = { query = it; exactBarcode = false }, singleLine = true, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp),
+                leadingIcon = { Icon(Icons.Default.Search, null) },
+                trailingIcon = { IconButton(onClick = scanBarcode) { Icon(Icons.Default.QrCodeScanner, "Pindai barcode barang", tint = Blue) } },
+                placeholder = { Text("Cari nama atau barcode...", fontSize = 12.sp) },
+                colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = White, focusedContainerColor = White, unfocusedBorderColor = Line))
+            Button(onClick = onAdd, shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.height(56.dp)) { Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp)); Text(" Tambah", fontSize = 12.sp) }
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = categoryFilter == null, onClick = { categoryFilter = null }, label = { Text("Semua ${products.size}") }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Blue, selectedLabelColor = White))
+            products.map { it.category }.filter { it.isNotBlank() }.distinct().sorted().forEach { category ->
+                FilterChip(selected = categoryFilter == category, onClick = { categoryFilter = category }, label = { Text("$category ${products.count { it.category == category }}") }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Blue, selectedLabelColor = White))
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        DemoNote("Katalog awal berisi barang contoh, bukan data toko Anda. Periksa, ubah, atau nonaktifkan sebelum digunakan.")
+        Spacer(Modifier.height(14.dp))
+        Surface(color = White, shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, if (low.isNotEmpty()) MaterialTheme.colorScheme.errorContainer else Line)) {
+            Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(color = MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Default.Warning, null, tint = Danger, modifier = Modifier.padding(8.dp).size(18.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Text("Melewati Batas Stok", fontSize = 15.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    DemoLabel("${low.size} barang")
+                }
+                if (low.isEmpty()) { Spacer(Modifier.height(8.dp)); DemoNote("Belum ada barang yang perlu kulak.") }
+                low.forEach { product ->
+                    Spacer(Modifier.height(8.dp))
+                    Surface(color = LightSurface, shape = RoundedCornerShape(10.dp)) {
+                        Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                            Text(product.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Sisa ${product.stock} pcs • Batas min. ${product.minimumStock} pcs", fontSize = 11.sp, color = Muted)
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.height(20.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("DAFTAR INVENTARIS", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Muted, modifier = Modifier.weight(1f))
+            Text("${list.size} barang", fontSize = 12.sp, color = Muted)
+        }
+        Spacer(Modifier.height(10.dp))
         message?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
         stockNotice?.let { Text(it, color = Blue, fontSize = 12.sp) }
         if (list.isEmpty()) Text("Barang tidak ditemukan.", color = Muted)
         list.forEach { product ->
-            DemoCard {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    ProductPhoto(product, modifier = Modifier.size(60.dp).background(Background, RoundedCornerShape(10.dp)))
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(product.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Text("Stok ${product.stock} pcs • ${product.category}", fontSize = 12.sp, color = Muted)
-                        product.barcode?.let { Text("Barcode: $it", fontSize = 11.sp, color = Muted) }
-                        Spacer(Modifier.height(4.dp))
-                        Text("Jual ${rupiah(product.price)} / pcs", color = Blue, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        Text(product.cost?.let { "Modal ${rupiah(it)} / pcs" } ?: "Modal belum diisi", color = Muted, fontSize = 11.sp)
+            Surface(color = White, shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Line)) {
+                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ProductPhoto(product, modifier = Modifier.size(66.dp).clip(RoundedCornerShape(10.dp)).background(LightSurface))
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(product.category + (product.barcode?.let { " • $it" } ?: ""), fontSize = 10.sp, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(product.name, fontWeight = FontWeight.Bold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text(rupiah(product.price), color = Blue, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                            Text(product.cost?.let { "Modal ${rupiah(it)} / pcs" } ?: "Modal belum diisi", color = Muted, fontSize = 10.sp)
+                        }
+                        IconButton(onClick = { onEdit(product.id) }) { Icon(Icons.Default.Edit, "Edit ${product.name}", tint = Blue) }
                     }
-                    IconButton(onClick = { onEdit(product.id) }) { Icon(Icons.Default.Edit, "Edit ${product.name}", tint = Blue) }
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(color = if (product.needsRestock()) MaterialTheme.colorScheme.errorContainer else LightSurface, shape = RoundedCornerShape(8.dp)) {
+                            Text("Stok ${product.stock} pcs", Modifier.padding(horizontal = 9.dp, vertical = 5.dp), fontSize = 11.sp, color = if (product.needsRestock()) Danger else Blue, fontWeight = FontWeight.SemiBold)
+                        }
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = { addStockProduct = product; message = null; stockNotice = null }, enabled = !updating, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("+ Stok", fontSize = 12.sp) }
+                        TextButton(onClick = { confirmActive = product }, enabled = !updating, contentPadding = PaddingValues(horizontal = 8.dp)) { Text(if (product.active) "Nonaktifkan" else "Aktifkan", fontSize = 12.sp) }
+                    }
+                    if (!product.active) DemoLabel("Tidak dijual")
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { addStockProduct = product; message = null; stockNotice = null }, enabled = !updating) { Text("Tambah stok") }
-                    TextButton(onClick = { confirmActive = product }, enabled = !updating) { Text(if (product.active) "Nonaktifkan" else "Aktifkan kembali") }
-                }
-                if (!product.active) DemoLabel("Tidak dijual")
             }
             Spacer(Modifier.height(10.dp))
         }
         DemoNote("Barang nonaktif tetap tersimpan, tetapi tidak muncul di kasir.")
+        Spacer(Modifier.height(24.dp))
     }
     addStockProduct?.let { product ->
         AddStockDialog(product = product, store = store, onClose = { addStockProduct = null }, onSaved = { after ->

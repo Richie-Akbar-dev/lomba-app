@@ -59,4 +59,8 @@ internal fun Product.matchesSearch(query: String, exactBarcode: Boolean = false)
     else name.contains(search, ignoreCase = true) || barcode?.contains(search, ignoreCase = true) == true
 }
 
+/** Category chips filter alongside the existing name/barcode search. Null selects all. */
+internal fun Product.matchesCatalogFilter(query: String, exactBarcode: Boolean, category: String?): Boolean =
+    matchesSearch(query, exactBarcode) && (category == null || this.category == category)
+
 internal fun Product.needsRestock(): Boolean = active && stock <= minimumStock
