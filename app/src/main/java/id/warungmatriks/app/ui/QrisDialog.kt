@@ -3,6 +3,10 @@ package id.warungmatriks.app.ui
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -20,7 +24,7 @@ import id.warungmatriks.app.data.QrisPayload
 import id.warungmatriks.app.data.InsufficientStockException
 import id.warungmatriks.app.data.ProductChangedException
 import id.warungmatriks.app.data.rupiah
-import id.warungmatriks.app.ui.theme.Muted
+import id.warungmatriks.app.ui.theme.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -40,7 +44,15 @@ internal fun QrisDialog(total: Int, source: String, onSourceChange: (String) -> 
     val scope = rememberCoroutineScope()
     AlertDialog(
         onDismissRequest = { if (!busy) onClose() },
-        title = { Text("QRIS • ${rupiah(total)}") },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(color = PaleBlue, shape = RoundedCornerShape(10.dp)) { Icon(Icons.Default.QrCode, null, tint = Blue, modifier = Modifier.padding(8.dp).size(20.dp)) }
+                Spacer(Modifier.width(10.dp))
+                Text("QRIS • ${rupiah(total)}", fontWeight = FontWeight.Bold)
+            }
+        },
+        containerColor = White,
+        shape = RoundedCornerShape(18.dp),
         text = {
             Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("Payload QRIS statis dari pengaturan akun terisi otomatis jika tersedia. Perubahan di sini hanya untuk transaksi ini dan tidak mengubah kode tersimpan.", fontSize = 12.sp, color = Muted, lineHeight = 18.sp)
@@ -68,7 +80,7 @@ internal fun QrisDialog(total: Int, source: String, onSourceChange: (String) -> 
                             showReminder = true
                         } catch (e: CancellationException) { throw e } catch (_: InsufficientStockException) { error = "Stok tidak cukup. Tutup QR dan periksa keranjang." } catch (_: ProductChangedException) { error = "Data barang berubah. Tutup QR dan pilih barang lagi." } catch (e: IllegalArgumentException) { error = e.message ?: "Payload QRIS tidak valid." } catch (_: Exception) { error = "QR atau penjualan belum dapat disimpan. Periksa penyimpanan dan coba lagi." } finally { busy = false }
                     }
-                }, enabled = source.isNotBlank() && !busy && !recorded, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Membuat QR dan mencatat..." else if (recorded) "Penjualan sudah dicatat" else "Tampilkan QR & catat penjualan") }
+                }, enabled = source.isNotBlank() && !busy && !recorded, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) { Text(if (busy) "Membuat QR dan mencatat..." else if (recorded) "Penjualan sudah dicatat" else "Tampilkan QR & catat penjualan") }
                 error?.let { Spacer(Modifier.height(8.dp)); Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
                 image?.let { Spacer(Modifier.height(12.dp)); Image(it.asImageBitmap(), contentDescription = "QRIS untuk ${rupiah(total)}", modifier = Modifier.sizeIn(maxWidth = 240.dp, maxHeight = 240.dp).fillMaxWidth().aspectRatio(1f)) }
                 Spacer(Modifier.height(12.dp))

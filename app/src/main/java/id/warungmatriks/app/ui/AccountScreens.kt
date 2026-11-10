@@ -1,6 +1,10 @@
 package id.warungmatriks.app.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,7 +32,7 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
     var binary by remember { mutableStateOf(false) }
     var editingProfile by remember { mutableStateOf(false) }
     var confirmSignOut by remember { mutableStateOf(false) }
-    DemoPage("Akun & Pengaturan", "Profil tersimpan di perangkat") {
+    DemoPage("Akun & Pengaturan", account.shop.shopName + " • Profil di perangkat", badgeText = "LOKAL") {
         DemoCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(color = PaleBlue, shape = RoundedCornerShape(50)) { Icon(Icons.Default.Person, null, tint = Blue, modifier = Modifier.padding(14.dp).size(32.dp)) }
@@ -56,24 +60,22 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
             }
         }
         SectionGap(); GroupTitle("Manajemen toko & kasir")
-        DemoCard {
-            MenuRow(Icons.Default.Storefront, "Profil toko", "Ubah nama pemilik, nama warung & jenis usaha") { editingProfile = true }
-            HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Line)
-            MenuRow(Icons.Default.QrCode, "QRIS toko", "Atur kode biner QRIS statis") { binary = true }
-            HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Line)
-            MenuRow(Icons.Default.NotificationsNone, "Notifikasi", "Pengingat & aktivitas toko") { onNotifications() }
-        }
+        AccountMenuTile(Icons.Default.Storefront, "Profil toko", "Ubah pemilik, nama warung & jenis usaha") { editingProfile = true }
+        Spacer(Modifier.height(8.dp))
+        AccountMenuTile(Icons.Default.QrCode, "QRIS toko", "Atur kode biner QRIS statis") { binary = true }
+        Spacer(Modifier.height(8.dp))
+        AccountMenuTile(Icons.Default.NotificationsNone, "Notifikasi", "Pengingat & aktivitas toko") { onNotifications() }
         SectionGap(); GroupTitle("Data & keuangan")
-        DemoCard {
-            MenuRow(Icons.Default.CloudOff, "Cadangkan & pulihkan", "Belum ada sinkronisasi atau backup") { info = "Backup dan sinkronisasi belum tersedia." }
-            HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Line)
-            MenuRow(Icons.Default.FileDownload, "Ekspor laporan", "PDF melalui halaman Laporan") { info = "Buka halaman Laporan untuk mengunduh atau membagikan PDF." }
-        }
+        AccountMenuTile(Icons.Default.CloudOff, "Cadangkan & pulihkan", "Backup belum tersedia") { info = "Backup dan sinkronisasi belum tersedia." }
+        Spacer(Modifier.height(8.dp))
+        AccountMenuTile(Icons.Default.FileDownload, "Ekspor laporan", "PDF melalui halaman Laporan") { info = "Buka halaman Laporan untuk mengunduh atau membagikan PDF." }
         SectionGap(); GroupTitle("Bantuan & keamanan")
-        DemoCard {
-            MenuRow(Icons.Default.SupportAgent, "Pusat bantuan", "Informasi bantuan") { info = "Layanan bantuan belum tersedia." }
-            HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Line)
-            MenuRow(Icons.Default.Logout, "Keluar akun", "Masuk kembali memerlukan internet") { if (!signOutBusy) confirmSignOut = true }
+        AccountMenuTile(Icons.Default.SupportAgent, "Pusat bantuan", "Layanan bantuan belum tersedia") { info = "Layanan bantuan belum tersedia." }
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = { if (!signOutBusy) confirmSignOut = true }, enabled = !signOutBusy,
+            modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer)) {
+            Icon(Icons.Default.Logout, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Keluar akun", fontWeight = FontWeight.Bold)
         }
         if (signOutBusy) Text("Sedang keluar...", color = Muted, fontSize = 12.sp)
         signOutError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
@@ -94,6 +96,23 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
         confirmButton = { TextButton(onClick = { confirmSignOut = false; onSignOut() }) { Text("Keluar") } },
         dismissButton = { TextButton(onClick = { confirmSignOut = false }) { Text("Batal") } },
     )
+}
+
+@Composable
+private fun AccountMenuTile(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+    Surface(color = White, shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Line)) {
+        Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(color = LightSurface, shape = RoundedCornerShape(10.dp)) {
+                Icon(icon, null, tint = Blue, modifier = Modifier.padding(10.dp).size(20.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Ink)
+                Text(subtitle, fontSize = 11.sp, color = Muted, lineHeight = 16.sp)
+            }
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Muted)
+        }
+    }
 }
 
 @Composable
@@ -130,22 +149,47 @@ private fun BinaryDialog(ownerId: String, onClose: () -> Unit, onSaved: () -> Un
     var input by remember(settings) { mutableStateOf(if (inspection) "" else settings.payload()?.let(::encodeBinaryQris).orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
     var confirmReset by remember { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = onClose, title = { Text("Kode biner QRIS") }, text = {
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            DemoNote("Tempel isi QRIS statis sebagai biner ASCII, 8 angka 0 atau 1 per karakter. Spasi dan baris baru boleh digunakan.")
-            Spacer(Modifier.height(10.dp))
-            OutlinedTextField(value = input, onValueChange = { value -> if (value.length <= 24_576) { input = value; error = null } else error = "Kode biner terlalu panjang." },
-                label = { Text("Kode biner QRIS") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 220.dp), maxLines = 8)
-            Spacer(Modifier.height(8.dp))
-            DemoNote("Pemeriksaan hanya untuk format dan CRC. Ini tidak memverifikasi identitas penerima atau pembayaran. Data disimpan lokal, terpisah per akun.")
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
-            TextButton(onClick = { if (hasSaved) confirmReset = true else { input = ""; error = null } }) { Text("Reset kode") }
+    val clipboard = LocalClipboardManager.current
+    fun updateInput(value: String) {
+        if (value.length <= 24_576) { input = value; error = null }
+        else error = "Kode biner terlalu panjang."
+    }
+    Dialog(onDismissRequest = onClose) {
+        Surface(color = White, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(18.dp)) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(color = PaleBlue, shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Default.QrCode, null, tint = Blue, modifier = Modifier.padding(9.dp).size(20.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Text("Masukkan Kode Biner", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onClose, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Close, "Tutup", tint = Muted) }
+                }
+                HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Line)
+                Text("Kode biner QRIS", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Ink)
+                Spacer(Modifier.height(6.dp))
+                DemoNote("Tempel payload QRIS statis lengkap sebagai biner ASCII, 8 angka 0 atau 1 per karakter. Spasi dan baris baru boleh digunakan.")
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(value = input, onValueChange = ::updateInput,
+                    label = { Text("Kode biner QRIS") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 220.dp), maxLines = 8,
+                    shape = RoundedCornerShape(10.dp),
+                    trailingIcon = { IconButton(onClick = { clipboard.getText()?.text?.let(::updateInput) }) { Icon(Icons.Default.ContentPaste, "Tempel kode biner") } },
+                    colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = LightSurface, focusedContainerColor = LightSurface, unfocusedBorderColor = Line))
+                if (error != null) { Spacer(Modifier.height(8.dp)); Text(error!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Preset cepat:", fontSize = 11.sp, color = Muted)
+                    TextButton(onClick = { if (hasSaved) confirmReset = true else { input = ""; error = null } }) { Text("Reset") }
+                }
+                DemoNote("Pemeriksaan format dan CRC tidak memverifikasi identitas penerima atau pembayaran. Data disimpan lokal, terpisah per akun.")
+                Spacer(Modifier.height(12.dp))
+                Button(enabled = input.isNotBlank(), modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(10.dp), onClick = {
+                    try {
+                        if (settings.saveBinary(input)) onSaved() else error = "Kode belum dapat disimpan. Coba lagi."
+                    } catch (e: IllegalArgumentException) { error = e.message ?: "Kode tidak sesuai format QRIS." } catch (_: Exception) { error = "Kode belum dapat disimpan. Coba lagi." }
+                }) { Text("Periksa format & simpan", fontWeight = FontWeight.Bold) }
+            }
         }
-    }, confirmButton = { TextButton(enabled = input.isNotBlank(), onClick = {
-        try {
-            if (settings.saveBinary(input)) onSaved() else error = "Kode belum dapat disimpan. Coba lagi."
-        } catch (e: IllegalArgumentException) { error = e.message ?: "Kode tidak sesuai format QRIS." } catch (_: Exception) { error = "Kode belum dapat disimpan. Coba lagi." }
-    }) { Text("Periksa format & simpan") } }, dismissButton = { TextButton(onClick = onClose) { Text("Batal") } })
+    }
     if (confirmReset) AlertDialog(onDismissRequest = { confirmReset = false }, title = { Text("Hapus kode QRIS tersimpan?") },
         text = { Text("Kode akan dihapus dari perangkat untuk akun ini. Riwayat penjualan tidak berubah.") },
         confirmButton = { TextButton(onClick = {

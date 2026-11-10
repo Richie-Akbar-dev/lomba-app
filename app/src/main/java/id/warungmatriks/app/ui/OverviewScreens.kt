@@ -8,6 +8,8 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -48,14 +50,20 @@ internal fun NotificationsScreen(ownerId: String, onBack: () -> Unit, onCredit: 
     var error by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(store, inspection, revision) {
         loading = true; error = null
-        try { items = (if (inspection) DemoData.products else store.products()).filter { it.needsRestock() }; dueCredits = if (inspection) emptyList() else store.creditDetails().filter { it.remind && it.dueAt != null && it.dueAt <= System.currentTimeMillis() } }
+        try {
+            items = (if (inspection) DemoData.products.map { it.copy(minimumStock = 10) } else store.products()).filter { it.needsRestock() }
+            dueCredits = if (inspection) listOf(CreditDetail("preview", "Pelanggan contoh", 19500, null, null, true, 29500, 10000, 0))
+            else store.creditDetails().filter { it.remind && it.dueAt != null && it.dueAt <= System.currentTimeMillis() }
+        }
         catch (e: CancellationException) { throw e } catch (_: Exception) { error = "Peringatan stok belum dapat dimuat." } finally { loading = false }
     }
-    DemoPage("Notifikasi", "Pengingat stok dan kasbon lokal", onBack, badgeText = "DATA LOKAL") {
+    DemoPage("Notifikasi", "Pengingat stok dan kasbon lokal", onBack, badgeText = if (inspection) "PREVIEW" else "DATA LOKAL") {
         GroupTitle("Pengingat toko", "Stok barang aktif yang sama dengan atau di bawah batas minimum")
         DemoCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Text("Notifikasi stok perangkat", fontWeight = FontWeight.Bold); Text("Pengingat lokal untuk akun ini", fontSize = 12.sp, color = Muted) }
+                Surface(color = PaleBlue, shape = RoundedCornerShape(10.dp)) { Icon(Icons.Default.NotificationsNone, null, tint = Blue, modifier = Modifier.padding(9.dp).size(20.dp)) }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) { Text("Notifikasi stok perangkat", fontWeight = FontWeight.Bold, fontSize = 14.sp); Text("Pengingat lokal untuk akun ini", fontSize = 12.sp, color = Muted) }
                 Switch(checked = stockAlerts, onCheckedChange = { enabled ->
                     stockAlerts = enabled
                     if (!inspection) {
@@ -77,9 +85,10 @@ internal fun NotificationsScreen(ownerId: String, onBack: () -> Unit, onCredit: 
             }) { Text("Pengaturan notifikasi perangkat") }
         }
         Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("Semua", "Stok", "Kasbon").forEach { FilterChip(selected = filter == it, onClick = { filter = it }, label = { Text(it, fontSize = 12.sp) }) }
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("Semua", "Stok", "Kasbon").forEach { FilterChip(selected = filter == it, onClick = { filter = it }, label = { Text(it, fontSize = 12.sp) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Blue, selectedLabelColor = White)) }
         }
+        Spacer(Modifier.height(6.dp))
         if (filter != "Kasbon") {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Peringatan stok", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -87,9 +96,9 @@ internal fun NotificationsScreen(ownerId: String, onBack: () -> Unit, onCredit: 
             }
             if (loading) DemoNote("Memuat stok...")
             else if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-            else if (items.isEmpty()) DemoNote("Tidak ada barang yang mencapai batas stok minimum.")
+            else if (items.isEmpty()) DemoCard { DemoNote("Tidak ada barang yang mencapai batas stok minimum.") }
             else items.forEach { product ->
-                NotificationCard("STOK MENIPIS", product.name, "Sisa ${product.stock} pcs • batas minimum ${product.minimumStock} pcs.", Icons.Default.Inventory2)
+                NotificationCard(if (product.stock == 0) "STOK HABIS" else "STOK MENIPIS", product.name, "Sisa ${product.stock} pcs • batas minimum ${product.minimumStock} pcs.", Icons.Default.Inventory2, attention = true)
                 Spacer(Modifier.height(10.dp))
             }
         }
@@ -97,7 +106,7 @@ internal fun NotificationsScreen(ownerId: String, onBack: () -> Unit, onCredit: 
             Spacer(Modifier.height(8.dp)); Text("Kasbon jatuh tempo", fontWeight = FontWeight.Bold)
             if (loading) DemoNote("Memuat pengingat...")
             else if (error != null) Text("Pengingat belum dapat dimuat.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-            else if (dueCredits.isEmpty()) DemoNote("Tidak ada pengingat kasbon yang jatuh tempo.")
+            else if (dueCredits.isEmpty()) DemoCard { DemoNote("Tidak ada pengingat kasbon yang jatuh tempo.") }
             dueCredits.forEach { credit ->
                 NotificationCard("KASBON JATUH TEMPO", credit.customer, "Sisa ${rupiah(credit.remaining)}", Icons.Default.NotificationsNone)
                 Spacer(Modifier.height(10.dp))
@@ -109,12 +118,12 @@ internal fun NotificationsScreen(ownerId: String, onBack: () -> Unit, onCredit: 
 }
 
 @Composable
-private fun NotificationCard(type: String, title: String, detail: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+private fun NotificationCard(type: String, title: String, detail: String, icon: androidx.compose.ui.graphics.vector.ImageVector, attention: Boolean = false) {
     DemoCard {
         Row(verticalAlignment = Alignment.Top) {
-            Surface(color = PaleBlue, shape = RoundedCornerShape(10.dp)) { Icon(icon, null, tint = Blue, modifier = Modifier.padding(10.dp)) }
+            Surface(color = if (attention) MaterialTheme.colorScheme.errorContainer else PaleBlue, shape = RoundedCornerShape(10.dp)) { Icon(icon, null, tint = if (attention) Danger else Blue, modifier = Modifier.padding(10.dp)) }
             Spacer(Modifier.width(12.dp))
-            Column { Text(type, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Blue); Spacer(Modifier.height(5.dp)); Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp); Text(detail, color = Muted, fontSize = 12.sp, lineHeight = 18.sp) }
+            Column(Modifier.weight(1f)) { Text(type, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = if (attention) Danger else Blue); Spacer(Modifier.height(5.dp)); Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp); Spacer(Modifier.height(3.dp)); Text(detail, color = Muted, fontSize = 12.sp, lineHeight = 18.sp) }
         }
     }
 }

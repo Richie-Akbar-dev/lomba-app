@@ -309,9 +309,13 @@ internal fun AddProductScreen(ownerId: String, productId: String? = null, onBack
     DemoPage(if (productId == null) "Tambah Barang" else "Edit Barang", "Data disimpan di perangkat", onBack, badgeText = "DATA LOKAL") {
         DemoCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                ProductPhoto(previewProduct, Modifier.size(72.dp).background(Background, RoundedCornerShape(10.dp)))
+                ProductPhoto(previewProduct, Modifier.size(80.dp).clip(RoundedCornerShape(12.dp)).background(LightSurface))
                 Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) { Text("Foto barang", fontWeight = FontWeight.Bold); DemoNote("Opsional • tanpa foto memakai ikon barang") }
+                Column(Modifier.weight(1f)) {
+                    Text("Foto Produk", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Spacer(Modifier.height(4.dp))
+                    DemoNote("Opsional • membantu mengenali barang saat memilih di kasir.")
+                }
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -329,10 +333,11 @@ internal fun AddProductScreen(ownerId: String, productId: String? = null, onBack
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(value = barcode, onValueChange = { barcode = it.take(80) }, modifier = Modifier.fillMaxWidth(),
                 label = { Text("Barcode (opsional)") }, singleLine = true, shape = RoundedCornerShape(10.dp),
+                colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = LightSurface, focusedContainerColor = LightSurface, unfocusedBorderColor = Line),
                 trailingIcon = { IconButton(onClick = scanBarcode, enabled = !busy && !loading) { Icon(Icons.Default.QrCodeScanner, "Pindai barcode barang") } })
             Spacer(Modifier.height(12.dp)); Text("Kategori", fontSize = 12.sp, color = Muted)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("Sembako", "Minuman", "Makanan", "Rokok", "Lainnya").forEach { FilterChip(selected = category == it, onClick = { category = it }, label = { Text(it, fontSize = 11.sp) }) }
+                listOf("Sembako", "Minuman", "Makanan", "Rokok", "Lainnya").forEach { FilterChip(selected = category == it, onClick = { category = it }, label = { Text(it, fontSize = 11.sp) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Blue, selectedLabelColor = White)) }
             }
             if (category == "Lainnya") FormField("Nama kategori *", customCategory, { customCategory = it.take(40) })
             Spacer(Modifier.height(8.dp)); Text("Satuan jual: pcs", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -342,8 +347,14 @@ internal fun AddProductScreen(ownerId: String, productId: String? = null, onBack
             FormField("Modal per pcs (Rp, opsional)", buy, { buy = it.filter { c -> c in '0'..'9' }.take(9) }, "Kosongkan jika belum diketahui", true)
             Spacer(Modifier.height(10.dp)); FormField("Harga jual per pcs (Rp) *", sell, { sell = it.filter { c -> c in '0'..'9' }.take(9) }, "0", true)
             Spacer(Modifier.height(12.dp))
-            Text(if (cost != null && price != null) "Estimasi laba kotor: ${rupiah(price - cost)} / pcs" else "Laba kotor belum diketahui jika modal belum diisi.", color = Blue, fontSize = 12.sp)
-            if (cost != null && price != null && price < cost) Text("Harga jual lebih rendah daripada modal.", color = Muted, fontSize = 12.sp)
+            Surface(color = LightSurface, shape = RoundedCornerShape(10.dp)) {
+                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                    Text("Estimasi laba kotor", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Ink)
+                    Spacer(Modifier.height(4.dp))
+                    Text(if (cost != null && price != null) "${rupiah(price - cost)} / pcs" else "Belum diketahui jika modal belum diisi.", color = Blue, fontSize = 12.sp)
+                    if (cost != null && price != null && price < cost) Text("Harga jual lebih rendah daripada modal.", color = Danger, fontSize = 12.sp)
+                }
+            }
         }
         SectionGap(); GroupTitle("Stok & satuan")
         DemoCard {
@@ -365,7 +376,8 @@ internal fun AddProductScreen(ownerId: String, productId: String? = null, onBack
 @Composable
 internal fun FormField(label: String, value: String, onValueChange: (String) -> Unit, placeholder: String = "", numeric: Boolean = false) {
     OutlinedTextField(value = value, onValueChange = onValueChange, modifier = Modifier.fillMaxWidth(), label = { Text(label) }, placeholder = { Text(placeholder) },
-        singleLine = true, shape = RoundedCornerShape(10.dp), keyboardOptions = KeyboardOptions(keyboardType = if (numeric) KeyboardType.Number else KeyboardType.Text))
+        singleLine = true, shape = RoundedCornerShape(10.dp), keyboardOptions = KeyboardOptions(keyboardType = if (numeric) KeyboardType.Number else KeyboardType.Text),
+        colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = LightSurface, focusedContainerColor = LightSurface, unfocusedBorderColor = Line))
 }
 
 @Composable

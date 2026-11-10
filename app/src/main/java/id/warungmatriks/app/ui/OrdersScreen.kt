@@ -7,6 +7,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -40,7 +43,7 @@ private fun dayWindow(now: Long = System.currentTimeMillis()): Pair<Long, Long> 
 private fun dateText(time: Long, pattern: String) = SimpleDateFormat(pattern, Locale("id", "ID")).format(Date(time))
 
 @Composable
-internal fun OrdersScreen(ownerId: String) {
+internal fun OrdersScreen(ownerId: String, shopName: String = "Warung Matriks", onNotifications: () -> Unit = {}, onAccount: () -> Unit = {}) {
     val context = LocalContext.current
     val inspection = LocalInspectionMode.current
     val store = remember(context, ownerId) { CashierStore(context, ownerId) }
@@ -104,33 +107,52 @@ internal fun OrdersScreen(ownerId: String) {
 
     LazyColumn(Modifier.fillMaxSize().background(Background), contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Pesanan", fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Ink)
-                    Text("Riwayat tersimpan di perangkat", fontSize = 12.sp, color = Muted)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Surface(color = Blue, shape = RoundedCornerShape(12.dp)) {
+                    Icon(Icons.Default.ReceiptLong, null, tint = White, modifier = Modifier.padding(10.dp).size(20.dp))
                 }
-                DemoLabel(if (inspection) "PREVIEW" else "DATA LOKAL")
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Warung Matriks • $shopName", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Ink, maxLines = 1)
+                    Text("Pesanan • data di perangkat", fontSize = 11.sp, color = Muted)
+                }
+                IconButton(onClick = onNotifications) { Icon(Icons.Default.NotificationsNone, "Notifikasi", tint = Ink) }
+                IconButton(onClick = onAccount, modifier = Modifier.size(38.dp).background(Blue, RoundedCornerShape(50))) { Icon(Icons.Default.Person, "Akun", tint = White) }
             }
         }
         item {
-            GroupTitle("Ringkasan penjualan hari ini", dateText(window.first, "dd MMMM yyyy") + " • sesuai jam perangkat")
-            DemoCard {
-                if (summary == null) DemoNote(if (error != null) "Ringkasan belum tersedia." else "Memuat ringkasan...")
-                else {
-                    val current = summary!!
-                    InfoLine("Jumlah transaksi", current.count.toString()); Spacer(Modifier.height(8.dp))
-                    InfoLine("Nilai penjualan tercatat", rupiah(current.total)); Spacer(Modifier.height(8.dp))
-                    InfoLine("QRIS dicatat, belum terverifikasi", rupiah(current.qrisTotal)); Spacer(Modifier.height(8.dp))
-                    InfoLine("Tunai masuk dari penjualan", rupiah(current.cashApplied)); Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Ringkasan Penjualan", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
+                    Text(dateText(window.first, "dd MMMM yyyy") + " • sesuai jam perangkat", fontSize = 11.sp, color = Muted)
+                }
+                DemoLabel(if (inspection) "PREVIEW" else "HARI INI")
+            }
+            Spacer(Modifier.height(10.dp))
+            val current = summary
+            if (current == null) DemoCard { DemoNote(if (error != null) "Ringkasan belum tersedia." else "Memuat ringkasan...") }
+            else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OrdersMetric("Penjualan", rupiah(current.total), Icons.Default.ReceiptLong, Modifier.weight(1f))
+                    OrdersMetric("Transaksi", current.count.toString(), Icons.Default.ShoppingCart, Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OrdersMetric("Tunai masuk", rupiah(current.cashApplied), Icons.Default.AccountBalanceWallet, Modifier.weight(1f))
+                    OrdersMetric("QRIS dicatat", rupiah(current.qrisTotal), Icons.Default.QrCode, Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(8.dp))
+                DemoCard {
                     InfoLine("Kasbon saat transaksi", rupiah(current.initialDebt))
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(6.dp))
                     DemoNote("Bukan saldo laci atau sisa kasbon saat ini. Nilai QRIS dicatat tanpa bukti pembayaran dan bukan saldo bank.")
                 }
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("Penjualan", "Kulakan").forEach { label -> FilterChip(selected = section == label, onClick = { section = label }, label = { Text(label) }, modifier = Modifier.weight(1f)) }
+                listOf("Penjualan", "Kulakan").forEach { label -> FilterChip(selected = section == label, onClick = { section = label }, label = { Text(label) }, modifier = Modifier.weight(1f), colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Blue, selectedLabelColor = White)) }
             }
         }
         if (section == "Kulakan") {
@@ -138,11 +160,11 @@ internal fun OrdersScreen(ownerId: String) {
         } else {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("Hari ini", "Semua tanggal").forEach { label -> FilterChip(selected = period == label, onClick = { period = label }, label = { Text(label, fontSize = 12.sp) }) }
+                    listOf("Hari ini", "Semua tanggal").forEach { label -> FilterChip(selected = period == label, onClick = { period = label }, label = { Text(label, fontSize = 12.sp) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Blue, selectedLabelColor = White)) }
                 }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
                     listOf(SaleHistoryFilter.ALL to "Semua", SaleHistoryFilter.PAID_AT_SALE to "Tunai lunas", SaleHistoryFilter.CREDIT_AT_SALE to "Kasbon", SaleHistoryFilter.QRIS to "QRIS").forEach { (value, label) ->
-                        FilterChip(selected = filter == value.name, onClick = { filter = value.name }, label = { Text(label, fontSize = 11.sp) })
+                        FilterChip(selected = filter == value.name, onClick = { filter = value.name }, label = { Text(label, fontSize = 11.sp) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Blue, selectedLabelColor = White))
                     }
                 }
                 DemoNote("Filter tunai lunas/kasbon berdasarkan kondisi saat transaksi, bukan status pelunasan terbaru. QRIS terpisah karena pembayaran tidak diverifikasi.")
@@ -169,19 +191,39 @@ internal fun OrdersScreen(ownerId: String) {
 }
 
 @Composable
+private fun OrdersMetric(title: String, value: String, icon: ImageVector, modifier: Modifier = Modifier) {
+    Surface(modifier = modifier, color = White, shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Line)) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(color = PaleBlue, shape = RoundedCornerShape(8.dp)) { Icon(icon, null, tint = Blue, modifier = Modifier.padding(6.dp).size(16.dp)) }
+                Spacer(Modifier.width(7.dp))
+                Text(title, color = Muted, fontSize = 11.sp)
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(value, color = Blue, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 2)
+        }
+    }
+}
+
+@Composable
 private fun SaleCard(sale: SaleRecord, onDetails: () -> Unit) {
     DemoCard {
         Row(verticalAlignment = Alignment.Top) {
+            Surface(color = LightSurface, shape = RoundedCornerShape(10.dp)) {
+                Icon(Icons.Default.ReceiptLong, null, tint = Blue, modifier = Modifier.padding(9.dp).size(19.dp))
+            }
+            Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text("Penjualan #${sale.id.take(8)}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text(dateText(sale.createdAt, "dd MMM yyyy • HH:mm"), color = Muted, fontSize = 12.sp)
+                Text(dateText(sale.createdAt, "dd MMM yyyy • HH:mm"), color = Muted, fontSize = 11.sp)
             }
             Text(rupiah(sale.total), color = Blue, fontWeight = FontWeight.Bold, fontSize = 15.sp)
         }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(10.dp))
         DemoLabel(if (sale.paymentMethod == "qris") "QRIS dicatat • belum diverifikasi" else if (sale.initialDebt > 0) "Ada kasbon saat transaksi" else "Tunai lunas saat transaksi")
-        sale.customer?.let { Spacer(Modifier.height(6.dp)); Text("Pelanggan: $it", fontSize = 12.sp, color = Muted) }
-        TextButton(onClick = onDetails) { Text("Lihat rincian") }
+        sale.customer?.let { Spacer(Modifier.height(8.dp)); Text("Pelanggan: $it", fontSize = 12.sp, color = Muted) }
+        Spacer(Modifier.height(4.dp))
+        OutlinedButton(onClick = onDetails, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(10.dp)) { Text("Lihat rincian", fontWeight = FontWeight.SemiBold) }
     }
 }
 
