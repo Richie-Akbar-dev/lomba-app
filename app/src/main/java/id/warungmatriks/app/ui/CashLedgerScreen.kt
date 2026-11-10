@@ -7,7 +7,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.*
+import androidx.compose.ui.Alignment
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -64,8 +65,11 @@ internal fun CashLedgerScreen(ownerId: String, onBack: () -> Unit) {
     LaunchedEffect(store, week, period, revision, inspection) {
         loading = true; loadingMore = false; error = null; summary = null; ins = emptyList(); outs = emptyList(); moreIn = false; moreOut = false
         try {
-            if (inspection) summary = CashSummary(0, 0)
-            else {
+            if (inspection) {
+                summary = CashSummary(200000, 45000)
+                ins = listOf(CashMovement("preview-in", week.start, "in", "sale", 200000, null))
+                outs = listOf(CashMovement("preview-out", week.start, "out", "purchase", 45000, null))
+            } else {
                 val selectedWeek = if (period == "Minggu ini") week else null
                 val sums = store.cashSummary(week)
                 val inPage = store.cashMovements("in", selectedWeek)
@@ -92,15 +96,21 @@ internal fun CashLedgerScreen(ownerId: String, onBack: () -> Unit) {
         }
     }
 
-    DemoPage("Kas masuk & keluar", "Sirkulasi tunai mingguan", onBack, badgeText = "DATA LOKAL") {
+    DemoPage("Kas masuk & keluar", "Sirkulasi tunai mingguan", onBack, badgeText = if (inspection) "PREVIEW" else "DATA LOKAL") {
         DemoCard {
-            Row {
-                Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = Blue)
-                Spacer(Modifier.width(10.dp))
-                Column {
-                    Text("Saldo arus kas minggu ini", color = Muted, fontSize = 12.sp)
-                    Text(summary?.let { cashNetText(it.net) } ?: "—", fontSize = 23.sp, fontWeight = FontWeight.Bold, color = Blue)
-                    Text("${cashDate(week.start)} hingga sebelum ${cashDate(week.end)}", color = Muted, fontSize = 11.sp)
+            Text("Kas Laci Kasir", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ink)
+            Spacer(Modifier.height(12.dp))
+            Surface(color = LightSurface, shape = RoundedCornerShape(12.dp)) {
+                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(color = PaleBlue, shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = Blue, modifier = Modifier.padding(10.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("ARUS KAS MINGGU INI", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        Text("Sejak ${cashDate(week.start)}", color = Muted, fontSize = 10.sp)
+                    }
+                    Text(summary?.let { cashNetText(it.net) } ?: "—", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Blue)
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -108,8 +118,8 @@ internal fun CashLedgerScreen(ownerId: String, onBack: () -> Unit) {
         }
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Surface(Modifier.weight(1f), shape = RoundedCornerShape(14.dp), color = PaleBlue) { Column(Modifier.padding(14.dp)) { Text("Kas masuk", color = Muted, fontSize = 12.sp); Text(summary?.let { rupiah(it.cashIn) } ?: "—", color = Blue, fontWeight = FontWeight.Bold) } }
-            Surface(Modifier.weight(1f), shape = RoundedCornerShape(14.dp), color = Background) { Column(Modifier.padding(14.dp)) { Text("Kas keluar", color = Muted, fontSize = 12.sp); Text(summary?.let { rupiah(it.cashOut) } ?: "—", color = Ink, fontWeight = FontWeight.Bold) } }
+            CashSummaryCard("Kas masuk", summary?.let { rupiah(it.cashIn) } ?: "—", true, Modifier.weight(1f))
+            CashSummaryCard("Kas keluar", summary?.let { rupiah(it.cashOut) } ?: "—", false, Modifier.weight(1f))
         }
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -125,13 +135,13 @@ internal fun CashLedgerScreen(ownerId: String, onBack: () -> Unit) {
         if (loading) DemoNote("Memuat kas...")
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
         notice?.let { Text(it, color = Blue, fontSize = 12.sp) }
-        Spacer(Modifier.height(12.dp)); GroupTitle("Uang masuk")
+        Spacer(Modifier.height(12.dp)); GroupTitle("Riwayat Uang Masuk")
         DemoCard {
             if (!loading && error == null && ins.isEmpty()) DemoNote("Belum ada catatan uang masuk.")
             ins.forEach { CashMovementRow(it) }
             if (moreIn) TextButton(onClick = { loadMore("in") }, enabled = !loadingMore) { Text(if (loadingMore) "Memuat..." else "Muat lebih banyak") }
         }
-        SectionGap(); GroupTitle("Uang keluar")
+        SectionGap(); GroupTitle("Riwayat Uang Keluar")
         DemoCard {
             if (!loading && error == null && outs.isEmpty()) DemoNote("Belum ada catatan uang keluar.")
             outs.forEach { CashMovementRow(it) }
@@ -147,15 +157,38 @@ internal fun CashLedgerScreen(ownerId: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun CashMovementRow(movement: CashMovement) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Column(Modifier.weight(1f)) {
-            Text(cashCategoryLabel(movement.category), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            Text(movement.timestamp?.let { cashDate(it) } ?: "Tanggal tidak tersedia • data lama", fontSize = 11.sp, color = Muted)
-            movement.note?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 11.sp, color = Muted) }
+private fun CashSummaryCard(title: String, amount: String, incoming: Boolean, modifier: Modifier = Modifier) {
+    Surface(modifier = modifier, color = White, shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Line)) {
+        Column(Modifier.padding(14.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, color = Muted, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                Surface(color = if (incoming) PaleBlue else MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(8.dp)) {
+                    Icon(if (incoming) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward, null, tint = if (incoming) Blue else Danger, modifier = Modifier.padding(7.dp).size(17.dp))
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(amount, color = if (incoming) Blue else Danger, fontSize = 15.sp, fontWeight = FontWeight.Bold)
         }
-        Spacer(Modifier.width(8.dp))
-        Text((if (movement.direction == "in") "+" else "−") + rupiah(movement.amount), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun CashMovementRow(movement: CashMovement) {
+    val incoming = movement.direction == "in"
+    Surface(color = LightSurface, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(color = if (incoming) PaleBlue else MaterialTheme.colorScheme.errorContainer, shape = RoundedCornerShape(50)) {
+                Icon(if (incoming) Icons.Default.ArrowDownward else Icons.Default.ArrowUpward, null, tint = if (incoming) Blue else Danger, modifier = Modifier.padding(7.dp).size(16.dp))
+            }
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(cashCategoryLabel(movement.category), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(movement.timestamp?.let { cashDate(it) } ?: "Tanggal tidak tersedia • data lama", fontSize = 11.sp, color = Muted)
+                movement.note?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 11.sp, color = Muted) }
+            }
+            Spacer(Modifier.width(8.dp))
+            Text((if (incoming) "+" else "−") + rupiah(movement.amount), fontSize = 13.sp, color = if (incoming) Blue else Danger, fontWeight = FontWeight.Bold)
+        }
     }
 }
 

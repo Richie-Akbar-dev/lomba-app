@@ -7,6 +7,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.sp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -35,7 +40,7 @@ internal fun ReportsScreen(ownerId: String, shopName: String) {
     val inspection = LocalInspectionMode.current
     val store = remember(context, ownerId) { CashierStore(context, ownerId) }
     val scope = rememberCoroutineScope()
-    var report by remember { mutableStateOf<ReportSnapshot?>(null) }
+    var report by remember { mutableStateOf<ReportSnapshot?>(if (inspection) previewReport() else null) }
     var revision by remember { mutableIntStateOf(0) }
     var error by remember { mutableStateOf<String?>(null) }
     var actions by remember { mutableStateOf(false) }
@@ -106,13 +111,19 @@ internal fun ReportsScreen(ownerId: String, shopName: String) {
             val range = SimpleDateFormat("dd MMM yyyy", Locale("id", "ID"))
             Text("${range.format(Date(r.start))} – ${range.format(Date(r.end - 1))}", color = Muted)
             Spacer(Modifier.height(8.dp))
-            GroupTitle("Ringkasan penjualan")
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ReportMetric("Uang Masuk", rupiah(r.sales), "Nilai penjualan", Icons.Default.ArrowDownward, Modifier.weight(1f))
+                ReportMetric("Laba Kotor", r.profit?.let { rupiah(it) } ?: "Tidak lengkap", "Perkiraan", Icons.Default.TrendingUp, Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ReportMetric("Modal Diputar", r.modal?.let { rupiah(it) } ?: "Tidak lengkap", "Barang terjual", Icons.Default.Sync, Modifier.weight(1f))
+                ReportMetric("Potensi Stok", rupiah(r.activeStockValue), "Barang aktif", Icons.Default.Inventory2, Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(10.dp))
             DemoCard {
-                InfoLine("Uang masuk / nilai penjualan", rupiah(r.sales)); Spacer(Modifier.height(8.dp))
                 InfoLine("Jumlah transaksi", r.count.toString()); Spacer(Modifier.height(8.dp))
-                InfoLine("QRIS dicatat", rupiah(r.qris)); Spacer(Modifier.height(8.dp))
-                InfoLine("Modal barang terjual", r.modal?.let { rupiah(it) } ?: "Tidak lengkap"); Spacer(Modifier.height(8.dp))
-                InfoLine("Perkiraan laba kotor", r.profit?.let { rupiah(it) } ?: "Tidak lengkap")
+                InfoLine("QRIS dicatat", rupiah(r.qris))
                 if (r.missingCost > 0 || r.missingItems > 0) DemoNote("Modal atau rincian sebagian barang tidak tersedia; total modal/laba tidak ditebak.")
                 DemoNote("Nilai penjualan termasuk kasbon dan QRIS; bukan uang tunai yang sudah diterima. Laba kotor belum memperhitungkan biaya usaha.")
             }
@@ -125,40 +136,89 @@ internal fun ReportsScreen(ownerId: String, shopName: String) {
                 InfoLine("Modal awal / setoran", rupiah(r.deposits))
                 DemoNote("Setoran bukan penjualan. Angsuran bukan penjualan baru. Kas keluar termasuk penarikan pemilik dan kategori lain, bukan hanya kulakan.")
             }
-            SectionGap(); GroupTitle("Potensi penjualan stok aktif")
-            DemoCard { Text(rupiah(r.activeStockValue), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Blue); DemoNote("Stok barang aktif × harga jual saat ini; bukan uang atau laba yang sudah diterima.") }
+            Spacer(Modifier.height(8.dp)); DemoNote("Potensi stok = stok barang aktif × harga jual saat ini; bukan uang atau laba yang sudah diterima.")
             SectionGap(); GroupTitle("Penjualan vs Kas Keluar", "Tujuh hari kalender terakhir dalam bulan ini")
             DemoCard { ReportGraph(r.days) }
             SectionGap(); GroupTitle("Kategori Paling Cuan", "Berdasarkan perkiraan laba kotor")
             DemoCard {
                 if (r.categories.isEmpty()) DemoNote("Belum ada kategori dengan data penjualan.")
-                r.categories.filter { it.profit != null }.sortedByDescending { it.profit }.forEach { InfoLine(it.name, rupiah(it.profit!!)); Spacer(Modifier.height(8.dp)) }
-                r.categories.filter { it.profit == null }.forEach { InfoLine(it.name, "Modal tidak lengkap"); Spacer(Modifier.height(8.dp)) }
+                r.categories.filter { it.profit != null }.sortedByDescending { it.profit }.forEach { ReportListRow(it.name, rupiah(it.profit!!)) }
+                r.categories.filter { it.profit == null }.forEach { ReportListRow(it.name, "Modal tidak lengkap") }
                 if (r.unknownCategory > 0) DemoNote("${r.unknownCategory} pcs dari transaksi lama tidak memiliki kategori historis dan tidak dimasukkan ke peringkat.")
             }
             SectionGap(); GroupTitle("Produk Paling Laris", "Maksimal 20 barang, menurut jumlah pcs terjual")
             DemoCard {
                 if (r.bestProducts.isEmpty()) DemoNote("Belum ada barang terjual.")
-                r.bestProducts.forEachIndexed { i, item -> InfoLine("${i + 1}. ${item.name}", "${item.quantity} pcs"); Spacer(Modifier.height(8.dp)) }
+                r.bestProducts.forEachIndexed { i, item -> ReportListRow("${i + 1}. ${item.name}", "${item.quantity} pcs") }
             }
             SectionGap(); GroupTitle("Pola Jam Ramai", "Berdasarkan jumlah transaksi, bukan jumlah orang")
-            DemoCard { InfoLine("06.00–17.59", "${r.morning} transaksi"); Spacer(Modifier.height(8.dp)); InfoLine("18.00–05.59", "${r.evening} transaksi"); DemoNote(if (r.morning == r.evening) "Jumlah transaksi sama." else if (r.morning > r.evening) "Lebih ramai pagi–sore." else "Lebih ramai sore–pagi.") }
+            DemoCard {
+                ReportListRow("Pagi – Sore • 06.00–17.59", "${r.morning} transaksi")
+                ReportListRow("Sore – Pagi • 18.00–05.59", "${r.evening} transaksi")
+                DemoNote(if (r.morning == r.evening) "Jumlah transaksi sama." else if (r.morning > r.evening) "Lebih ramai pagi–sore." else "Lebih ramai sore–pagi.")
+            }
             SectionGap(); GroupTitle("Data Stok Barang", "Semua barang terdaftar, termasuk yang nonaktif")
             DemoCard {
                 if (r.inventory.isEmpty()) DemoNote("Belum ada barang.")
                 r.inventory.forEach { item -> InfoLine(item.name + if (item.active) "" else " (nonaktif)", "${item.stock} pcs"); Spacer(Modifier.height(8.dp)) }
             }
-            SectionGap(); Button(onClick = { actions = true }, enabled = !busy && !inspection, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Menyiapkan PDF..." else "Bagikan / unduh laporan PDF") }
+            SectionGap(); Button(onClick = { actions = true }, enabled = !busy && !inspection, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = Sky)) { Icon(Icons.Default.Share, null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text(if (busy) "Menyiapkan PDF..." else "Bagikan / unduh laporan PDF") }
         }
     }
     if (actions) AlertDialog(onDismissRequest = { actions = false }, title = { Text("Laporan PDF") }, text = { Text("PDF berisi total dan rincian kasbon, termasuk nama dan nomor pelanggan. Pastikan penerima tepercaya.") }, confirmButton = { TextButton(onClick = { export(true) }) { Text("Bagikan WhatsApp") } }, dismissButton = { TextButton(onClick = { export(false) }) { Text("Unduh PDF") } })
     error?.let { message -> AlertDialog(onDismissRequest = { error = null }, title = { Text("Informasi") }, text = { Text(message) }, confirmButton = { TextButton(onClick = { error = null }) { Text("Tutup") } }) }
 }
 
+// Synthetic data is used only in Android Studio Preview, never in a running report.
+private fun previewReport(): ReportSnapshot {
+    val now = System.currentTimeMillis()
+    val start = reportMonthWindow(now).first
+    return ReportSnapshot(
+        start = start, end = now + 1, sales = 120000, qris = 20000, count = 4,
+        cashIn = 90000, cashOut = 30000, salesCash = 80000, installmentCash = 5000, deposits = 5000,
+        modal = 80000, profit = 40000, missingCost = 0, missingItems = 0, unknownCategory = 0,
+        categories = listOf(ReportCategory("Sembako", 40000, 0)),
+        bestProducts = listOf(ReportProduct("Barang contoh", 4)), morning = 3, evening = 1,
+        days = listOf(ReportDay(start, "Hari ini", 120000, 30000)),
+        inventory = listOf(ReportInventory("Barang contoh", 10, 5000, true)),
+    )
+}
+
+@Composable
+private fun ReportMetric(title: String, value: String, detail: String, icon: ImageVector, modifier: Modifier = Modifier) {
+    Surface(modifier = modifier, color = White, shape = RoundedCornerShape(14.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Line)) {
+        Column(Modifier.padding(14.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, color = Muted, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                Surface(color = PaleBlue, shape = RoundedCornerShape(50)) {
+                    Icon(icon, null, tint = Blue, modifier = Modifier.padding(6.dp).size(16.dp))
+                }
+            }
+            Spacer(Modifier.height(9.dp))
+            Text(value, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Blue, maxLines = 2)
+            Spacer(Modifier.height(4.dp))
+            Text(detail, color = Muted, fontSize = 10.sp)
+        }
+    }
+}
+
+@Composable
+private fun ReportListRow(label: String, value: String) {
+    Surface(color = LightSurface, shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, modifier = Modifier.weight(1f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Ink)
+            Spacer(Modifier.width(8.dp))
+            Text(value, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Blue)
+        }
+    }
+}
+
 @Composable
 private fun ReportGraph(days: List<ReportDay>) {
     if (days.isEmpty()) { DemoNote("Belum ada data."); return }
     val max = days.maxOf { maxOf(it.sales, it.cashOut) }.coerceAtLeast(1)
+    Text("Biru: penjualan • biru muda: seluruh kas keluar", color = Muted, fontSize = 11.sp)
+    Spacer(Modifier.height(8.dp))
     Row(Modifier.fillMaxWidth().height(150.dp), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) {
         days.forEach { day ->
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
@@ -171,7 +231,7 @@ private fun ReportGraph(days: List<ReportDay>) {
             }
         }
     }
-    DemoNote("Biru: penjualan • biru muda: seluruh kas keluar")
+    Spacer(Modifier.height(8.dp))
     days.forEach { InfoLine(it.label, "${rupiah(it.sales)} / ${rupiah(it.cashOut)}") }
 }
 

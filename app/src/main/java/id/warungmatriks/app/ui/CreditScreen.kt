@@ -10,6 +10,11 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,7 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.tooling.preview.Preview
-import id.warungmatriks.app.ui.theme.WarungMatriksTheme
+import id.warungmatriks.app.ui.theme.*
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -49,8 +54,8 @@ internal fun CreditScreen(ownerId: String, pending: PendingCredit?, onBack: () -
     var remind by remember(pending?.id) { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var credits by remember { mutableStateOf<List<CreditDetail>>(emptyList()) }
-    var creditItems by remember { mutableStateOf<Map<String, List<SaleItemSnapshot>>>(emptyMap()) }
+    var credits by remember { mutableStateOf(if (inspection) listOf(CreditDetail("preview", "Pelanggan Contoh", 19500, null, null, false, 29500, 10000, 0)) else emptyList()) }
+    var creditItems by remember { mutableStateOf(if (inspection) mapOf("preview" to listOf(SaleItemSnapshot("Barang contoh", 1, 29500, null))) else emptyMap()) }
     var revision by remember { mutableIntStateOf(0) }
     var selected by remember { mutableStateOf<CreditDetail?>(null) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -59,17 +64,34 @@ internal fun CreditScreen(ownerId: String, pending: PendingCredit?, onBack: () -
         if (inspection) return@LaunchedEffect
         try { val loaded = store.creditDetails(); credits = loaded; creditItems = loaded.associate { it.saleId to store.saleItemSnapshots(it.saleId) } } catch (e: CancellationException) { throw e } catch (_: Exception) { error = "Kasbon belum dapat dimuat." }
     }
-    DemoPage("Kasbon Pelanggan", if (pending != null) "Lengkapi data pelanggan" else "Kasbon belum lunas", onBack = { if (!busy) onBack() }, badgeText = "DATA LOKAL") {
+    DemoPage("Kasbon Pelanggan", if (pending != null) "Lengkapi data pelanggan" else "Kasbon belum lunas", onBack = { if (!busy) onBack() }, badgeText = if (inspection) "PREVIEW" else "DATA LOKAL") {
         if (pending != null) {
-            GroupTitle("Catat kasbon pelanggan")
             DemoCard {
-                Text("Barang", fontWeight = FontWeight.Bold)
-                pending.lines.forEach { Text("${it.product.name} × ${it.quantity} • ${rupiah(it.product.price.toLong() * it.quantity)}") }
-                Spacer(Modifier.height(8.dp))
-                InfoLine("Total belanja", rupiah(pending.total))
-                InfoLine("Dibayar di awal", rupiah(pending.received))
-                InfoLine("Sisa kasbon", rupiah(pending.total - pending.received))
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Surface(color = PaleBlue, shape = RoundedCornerShape(10.dp)) {
+                        Icon(Icons.Default.Edit, contentDescription = null, tint = Blue, modifier = Modifier.padding(9.dp).size(20.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Text("Catat Kasbon Pelanggan", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+                    DemoLabel("Kasbon baru")
+                }
+                HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Line)
+                Text("Daftar barang", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Ink)
+                Spacer(Modifier.height(6.dp))
+                Surface(color = LightSurface, shape = RoundedCornerShape(10.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                        pending.lines.forEach { Text("${it.product.name} × ${it.quantity} • ${rupiah(it.product.price.toLong() * it.quantity)}", fontSize = 12.sp, color = Ink) }
+                    }
+                }
                 Spacer(Modifier.height(12.dp))
+                Surface(color = LightSurface, shape = RoundedCornerShape(10.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                        InfoLine("Total belanja", rupiah(pending.total)); Spacer(Modifier.height(5.dp))
+                        InfoLine("Dibayar di awal", rupiah(pending.received)); Spacer(Modifier.height(5.dp))
+                        InfoLine("Sisa kasbon", rupiah(pending.total - pending.received), Blue)
+                    }
+                }
+                Spacer(Modifier.height(14.dp))
                 OutlinedTextField(name, { name = it.take(80) }, label = { Text("Nama pembeli (wajib)") }, singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(phone, { phone = it.take(22) }, label = { Text("Nomor WhatsApp (wajib)") }, placeholder = { Text("08... atau +62...") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), singleLine = true, modifier = Modifier.fillMaxWidth(), enabled = !busy)
@@ -86,11 +108,11 @@ internal fun CreditScreen(ownerId: String, pending: PendingCredit?, onBack: () -
                 }) { Text(due?.let { "Batas: ${dateText(it)}" } ?: "Pilih batas pelunasan (opsional)") }
                 if (due != null) {
                     TextButton(enabled = !busy, onClick = { due = null; remind = false }) { Text("Hapus batas waktu") }
-                    Row { Checkbox(checked = remind, onCheckedChange = { remind = it }, enabled = !busy); Text("Ingatkan saat jatuh tempo") }
+                    Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = remind, onCheckedChange = { remind = it }, enabled = !busy); Text("Ingatkan saat jatuh tempo", fontSize = 13.sp) }
                 }
                 DemoNote("Kembali sebelum menyimpan membatalkan transaksi; stok dan kas belum berubah.")
                 Spacer(Modifier.height(10.dp))
-                Button(enabled = !busy && name.isNotBlank() && normalizeWhatsapp(phone) != null && (due == null || due!! > System.currentTimeMillis()), modifier = Modifier.fillMaxWidth(), onClick = {
+                Button(enabled = !busy && name.isNotBlank() && normalizeWhatsapp(phone) != null && (due == null || due!! > System.currentTimeMillis()), modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(12.dp), onClick = {
                     val checkedDue = due
                     if (checkedDue != null && checkedDue <= System.currentTimeMillis()) { error = "Batas pelunasan harus di masa depan."; return@Button }
                     if (remind && Build.VERSION.SDK_INT >= 33) permission.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -108,33 +130,70 @@ internal fun CreditScreen(ownerId: String, pending: PendingCredit?, onBack: () -
             }
             SectionGap()
         }
-        GroupTitle("Total kasbon belum lunas")
-        DemoCard { Text(rupiah(credits.sumOf { it.remaining.toLong() }), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall); Text("${credits.size} transaksi") }
-        SectionGap(); GroupTitle("Riwayat kasbon berjalan")
+        DemoCard {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("TOTAL KASBON BELUM LUNAS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Muted)
+                    Spacer(Modifier.height(4.dp))
+                    Text(rupiah(credits.sumOf { it.remaining.toLong() }), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall, color = Blue)
+                    Text("${credits.size} transaksi aktif", fontSize = 12.sp, color = Muted)
+                }
+                Surface(color = PaleBlue, shape = RoundedCornerShape(12.dp)) {
+                    Icon(Icons.Default.AccountBalanceWallet, null, tint = Blue, modifier = Modifier.padding(12.dp))
+                }
+            }
+        }
+        SectionGap()
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Riwayat Kasbon Berjalan", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
+            Text("${credits.size} transaksi", fontSize = 11.sp, color = Muted)
+        }
+        Spacer(Modifier.height(10.dp))
         if (credits.isEmpty()) DemoNote("Belum ada kasbon yang belum lunas.")
         credits.forEach { credit ->
             DemoCard {
-                Text(credit.customer, fontWeight = FontWeight.Bold)
-                Text("Sisa: ${rupiah(credit.remaining)} • Total belanja: ${rupiah(credit.total)}")
-                Text("Dibayar di awal: ${rupiah(credit.received)}")
-                creditItems[credit.saleId]?.forEach { Text("${it.productName} × ${it.quantity}") }
-                credit.dueAt?.let { Text("Batas: ${dateText(it)}") }
-                Text(credit.phone?.let { "+$it" } ?: "Nomor WhatsApp tidak tersedia (data lama)")
-                Row {
-                    TextButton(enabled = !busy, onClick = { selected = credit }) { Text("Potong / Angsuran") }
-                    TextButton(enabled = !busy && credit.phone != null, onClick = {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                    Surface(color = PaleBlue, shape = RoundedCornerShape(50)) {
+                        Icon(Icons.Default.PersonOutline, null, tint = Blue, modifier = Modifier.padding(8.dp).size(20.dp))
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(credit.customer, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Ink)
+                        Text(credit.dueAt?.let { "Jatuh tempo: ${dateText(it)}" } ?: "Tanpa batas pelunasan", fontSize = 11.sp, color = Muted)
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(rupiah(credit.total), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Ink)
+                        Text("Sisa: ${rupiah(credit.remaining)}", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Danger)
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                Surface(color = LightSurface, shape = RoundedCornerShape(10.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(10.dp)) {
+                        val items = creditItems[credit.saleId].orEmpty()
+                        if (items.isEmpty()) Text("Rincian barang tidak tersedia", fontSize = 12.sp, color = Muted)
+                        items.forEach { Text("${it.productName} × ${it.quantity}", fontSize = 12.sp, color = Ink) }
+                        Text("Dibayar di awal: ${rupiah(credit.received)}", fontSize = 11.sp, color = Muted)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(credit.phone?.let { "+$it" } ?: "Nomor WhatsApp tidak tersedia (data lama)", fontSize = 12.sp, color = Muted)
+                Spacer(Modifier.height(8.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(enabled = !busy && credit.phone != null, onClick = {
                         try {
                             val message = creditMessage(credit.customer, credit.remaining, credit.dueAt?.let(::dateText))
                             val uri = Uri.parse("https://wa.me/${credit.phone}?text=${Uri.encode(message)}")
                             try { context.startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage("com.whatsapp")) }
                             catch (_: android.content.ActivityNotFoundException) { context.startActivity(Intent(Intent.ACTION_VIEW, uri).setPackage("com.whatsapp.w4b")) }
                         } catch (_: Exception) { error = "WhatsApp tidak tersedia. Pasang aplikasi WhatsApp untuk mengirim pesan." }
-                    }) { Text("Tagih WA") }
+                    }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp), contentPadding = PaddingValues(horizontal = 4.dp)) { Text("Tagih WA", fontSize = 12.sp) }
+                    Button(enabled = !busy, onClick = { selected = credit }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(10.dp), contentPadding = PaddingValues(horizontal = 4.dp)) { Text("Potong / Angsuran", fontSize = 12.sp) }
                 }
             }
             Spacer(Modifier.height(10.dp))
         }
     }
+
     selected?.let { credit ->
         var amount by remember(credit.saleId) { mutableStateOf("") }
         var capped by remember(credit.saleId) { mutableStateOf(false) }
@@ -168,4 +227,11 @@ internal fun CreditScreen(ownerId: String, pending: PendingCredit?, onBack: () -
 @Composable
 private fun CreditScreenPreview() {
     WarungMatriksTheme { CreditScreen("preview", null, {}, {}) }
+}
+
+@Preview(showBackground = true, widthDp = 360, heightDp = 800, name = "Form kasbon")
+@Composable
+private fun CreditFormPreview() {
+    val product = Product("preview", "Barang contoh", 29500, null, 10)
+    WarungMatriksTheme { CreditScreen("preview", PendingCredit("preview", listOf(CashierLine(product, 1)), 10000), {}, {}) }
 }
