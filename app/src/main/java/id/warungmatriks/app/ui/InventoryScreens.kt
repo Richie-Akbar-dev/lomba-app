@@ -80,7 +80,7 @@ internal fun InventoryScreen(ownerId: String, onAdd: () -> Unit, onEdit: (String
             OutlinedTextField(value = query, onValueChange = { query = it; exactBarcode = false }, singleLine = true, modifier = Modifier.weight(1f), shape = RoundedCornerShape(12.dp),
                 leadingIcon = { Icon(Icons.Default.Search, null) },
                 trailingIcon = { IconButton(onClick = scanBarcode) { Icon(Icons.Default.QrCodeScanner, "Pindai barcode barang", tint = Blue) } },
-                placeholder = { Text("Cari nama atau barcode...", fontSize = 12.sp) },
+                placeholder = { Text("Cari barang", fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = White, focusedContainerColor = White, unfocusedBorderColor = Line))
             Button(onClick = onAdd, shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.height(56.dp)) { Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp)); Text(" Tambah", fontSize = 12.sp) }
         }
@@ -91,7 +91,6 @@ internal fun InventoryScreen(ownerId: String, onAdd: () -> Unit, onEdit: (String
                 FilterChip(selected = categoryFilter == category, onClick = { categoryFilter = category }, label = { Text("$category ${products.count { it.category == category }}") }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Blue, selectedLabelColor = White))
             }
         }
-        Spacer(Modifier.height(10.dp))
         Spacer(Modifier.height(14.dp))
         Surface(color = White, shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, if (low.isNotEmpty()) MaterialTheme.colorScheme.errorContainer else Line)) {
             Column(Modifier.fillMaxWidth().padding(14.dp)) {
@@ -145,14 +144,16 @@ internal fun InventoryScreen(ownerId: String, onAdd: () -> Unit, onEdit: (String
                         }
                         Spacer(Modifier.weight(1f))
                         TextButton(onClick = { addStockProduct = product; message = null; stockNotice = null }, enabled = !updating, contentPadding = PaddingValues(horizontal = 8.dp)) { Text("+ Stok", fontSize = 12.sp) }
-                        TextButton(onClick = { confirmActive = product }, enabled = !updating, contentPadding = PaddingValues(horizontal = 8.dp)) { Text(if (product.active) "Nonaktifkan" else "Aktifkan", fontSize = 12.sp) }
+                        IconButton(onClick = { confirmActive = product }, enabled = !updating, modifier = Modifier.size(48.dp)) {
+                            Icon(if (product.active) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                contentDescription = if (product.active) "Nonaktifkan ${product.name}" else "Aktifkan ${product.name}", tint = Blue)
+                        }
                     }
                     if (!product.active) DemoLabel("Tidak dijual")
                 }
             }
             Spacer(Modifier.height(10.dp))
         }
-        DemoNote("Barang nonaktif tetap tersimpan, tetapi tidak muncul di kasir.")
         Spacer(Modifier.height(24.dp))
     }
     addStockProduct?.let { product ->
@@ -189,14 +190,16 @@ private fun AddStockDialog(product: Product, store: CashierStore, onClose: () ->
     AlertDialog(
         onDismissRequest = { if (!busy) onClose() },
         title = { Text("Tambah stok") },
-        text = { Column {
-            Text(product.name, fontWeight = FontWeight.Bold)
-            Text("Stok saat ini: ${product.stock} pcs", color = Muted, fontSize = 12.sp)
+        text = { Column(Modifier.fillMaxWidth()) {
+            Text(product.name, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Ink)
+            Spacer(Modifier.height(8.dp))
+            Text("Stok sekarang", color = Muted, fontSize = 12.sp)
+            Text("${product.stock} pcs", fontWeight = FontWeight.SemiBold, color = Ink, fontSize = 15.sp)
             Spacer(Modifier.height(12.dp))
             OutlinedTextField(value = quantity, onValueChange = { quantity = it.filter { c -> c in '0'..'9' }.take(9); error = null },
-                label = { Text("Jumlah stok ditambahkan (pcs)") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), enabled = !busy)
-            Spacer(Modifier.height(8.dp))
-            DemoNote("Hanya menambah stok, tidak otomatis mencatat kulakan atau pengeluaran kas.")
+                label = { Text("Stok tambahan", fontSize = 13.sp) },
+                suffix = { Text("pcs", fontSize = 12.sp) }, modifier = Modifier.fillMaxWidth(),
+                singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), enabled = !busy)
             error?.let { Spacer(Modifier.height(8.dp)); Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
         } },
         confirmButton = { TextButton(enabled = !busy && amount != null && amount > 0, onClick = {
