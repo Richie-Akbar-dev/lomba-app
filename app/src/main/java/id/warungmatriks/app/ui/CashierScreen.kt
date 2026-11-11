@@ -17,6 +17,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
@@ -75,7 +76,7 @@ internal class CashierState {
 }
 
 @Composable
-internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: String, shopName: String, onNotifications: () -> Unit, onAccount: () -> Unit, onCash: () -> Unit, onInventory: () -> Unit, onAddProduct: () -> Unit, onCredit: () -> Unit, onCreditCheckout: (PendingCredit) -> Unit) {
+internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: String, shopName: String, onNotifications: () -> Unit, onAccount: () -> Unit, onCash: () -> Unit, onCredit: () -> Unit, onCreditCheckout: (PendingCredit) -> Unit) {
     val context = LocalContext.current
     val inspection = LocalInspectionMode.current
     val store = remember(context, ownerId) { CashierStore(context, ownerId) }
@@ -130,7 +131,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
         Spacer(Modifier.height(14.dp))
         Header(cashierName = cashierName, shopName = shopName, lowStockCount = if (state.ready) state.catalog.count { it.needsRestock() } else 0, onNotifications = onNotifications, onAccount = onAccount)
         Spacer(Modifier.height(18.dp))
-        DemoCard {
+        DemoCard(modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable(role = Role.Button, onClickLabel = "Buka Kas Laci", onClick = onCash)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(color = PaleBlue, shape = RoundedCornerShape(12.dp)) {
                     Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = Blue, modifier = Modifier.padding(10.dp))
@@ -140,25 +141,18 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
                     Text("Arus kas minggu ini", color = Muted, fontSize = 12.sp)
                     Text(state.weeklyCash?.let { cashNetText(it.net) } ?: "—", color = Ink, fontWeight = FontWeight.Bold, fontSize = 22.sp)
                 }
+                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Muted)
             }
-            Spacer(Modifier.height(8.dp))
-            DemoNote("Kas masuk dikurangi kas keluar sejak Senin; bukan saldo fisik laci.")
-            TextButton(onClick = onCash, contentPadding = PaddingValues(0.dp)) { Text("Lihat kas masuk & keluar →", fontWeight = FontWeight.SemiBold) }
         }
         Spacer(Modifier.height(16.dp))
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = state.query, onValueChange = { state.query = it; state.exactBarcode = false }, modifier = Modifier.weight(1f),
-                placeholder = { Text("Cari nama atau barcode...", fontSize = 13.sp, color = Muted) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Muted) },
-                trailingIcon = { IconButton(onClick = scanBarcode) { Icon(Icons.Default.QrCodeScanner, "Pindai barcode barang", tint = Blue) } },
-                singleLine = true, shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = White, focusedContainerColor = White, unfocusedBorderColor = Line),
-            )
-            Button(onClick = onAddProduct, shape = RoundedCornerShape(12.dp), contentPadding = PaddingValues(horizontal = 12.dp), modifier = Modifier.height(56.dp)) {
-                Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp)); Text(" Barang", fontSize = 12.sp)
-            }
-        }
+        OutlinedTextField(
+            value = state.query, onValueChange = { state.query = it; state.exactBarcode = false }, modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Cari nama", fontSize = 13.sp, color = Muted) },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Muted) },
+            trailingIcon = { IconButton(onClick = scanBarcode) { Icon(Icons.Default.QrCodeScanner, "Pindai barcode barang", tint = Blue) } },
+            singleLine = true, shape = RoundedCornerShape(12.dp),
+            colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = White, focusedContainerColor = White, unfocusedBorderColor = Line),
+        )
         Spacer(Modifier.height(10.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = category == null, onClick = { category = null }, label = { Text("Semua") }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Blue, selectedLabelColor = White))
@@ -171,10 +165,6 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
             Icon(Icons.Default.Storefront, contentDescription = null, tint = Blue, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
             Text("Daftar produk", fontSize = 16.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            TextButton(onClick = onInventory) { Text("Lihat barang", fontSize = 12.sp) }
-        }
-        if (!inspection && state.ready && state.catalog.any { product -> DemoData.products.any { it.id == product.id } }) {
-            DemoNote("Barang dari versi sebelumnya tetap tersimpan. Pastikan nama, harga, dan stok sesuai sebelum digunakan.")
         }
         Spacer(Modifier.height(8.dp))
         if (!state.ready) {
@@ -191,8 +181,6 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
                         Text("Tambahkan barang baru atau aktifkan kembali barang di halaman Barang.", fontSize = 12.sp, color = Muted, lineHeight = 18.sp)
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                TextButton(onClick = onAddProduct, contentPadding = PaddingValues(0.dp)) { Text("+ Tambah barang", fontWeight = FontWeight.SemiBold) }
             }
         } else if (visible.isEmpty()) {
             DemoCard {
@@ -225,15 +213,11 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
         Spacer(Modifier.height(10.dp))
         Surface(color = Color.White, shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Line)) {
             Column(Modifier.fillMaxWidth().padding(14.dp)) {
-                if (items.isEmpty()) {
-                    Text("Keranjang masih kosong. Tambahkan produk untuk memulai.", color = Muted, fontSize = 13.sp, modifier = Modifier.padding(vertical = 12.dp))
-                } else {
-                    items.forEachIndexed { index, product ->
-                        CartItem(product, quantities[product.id] ?: 0, { changeQuantity(product, -1) }, { changeQuantity(product, 1) }, { quantities.remove(product.id) })
-                        if (index < items.lastIndex) HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Line)
-                    }
+                items.forEachIndexed { index, product ->
+                    CartItem(product, quantities[product.id] ?: 0, { changeQuantity(product, -1) }, { changeQuantity(product, 1) }, { quantities.remove(product.id) })
+                    if (index < items.lastIndex) HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Line)
                 }
-                HorizontalDivider(Modifier.padding(vertical = 14.dp), color = Line)
+                if (items.isNotEmpty()) HorizontalDivider(Modifier.padding(vertical = 14.dp), color = Line)
                 AmountRow("Subtotal", rupiah(total))
                 Spacer(Modifier.height(8.dp))
 
@@ -243,23 +227,6 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
             }
         }
         Spacer(Modifier.height(24.dp))
-        SectionHeading("Uang tunai", "Pilih nominal")
-        Spacer(Modifier.height(10.dp))
-        val options = listOf("Belum bayar" to 0, "Uang pas" to total, "Rp20.000" to 20000, "Rp50.000" to 50000, "Rp100.000" to 100000)
-        options.chunked(2).forEach { pair ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                pair.forEach { (label, amount) ->
-                    val selected = state.cashText.isNotBlank() && cash == amount
-                    Surface(
-                        modifier = Modifier.weight(1f).height(44.dp).clickable(enabled = total > 0) { state.cashText = amount.toString() },
-                        shape = RoundedCornerShape(10.dp), color = if (selected) PaleBlue else Color.White,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, if (selected) Blue else Line),
-                    ) { Box(contentAlignment = Alignment.Center) { Text(label, fontSize = 13.sp, color = if (selected) Blue else Ink, fontWeight = FontWeight.SemiBold) } }
-                }
-                if (pair.size == 1) Spacer(Modifier.weight(1f))
-            }
-            Spacer(Modifier.height(8.dp))
-        }
         OutlinedTextField(
             value = state.cashText,
             onValueChange = { state.cashText = it.filter { c -> c in '0'..'9' }.take(9) },
@@ -298,7 +265,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
                 Icon(Icons.Default.QrCode, null, modifier = Modifier.size(19.dp)); Spacer(Modifier.width(8.dp)); Text("Tampilkan QRIS", fontWeight = FontWeight.Bold, fontSize = 14.sp)
             }
         }
-        Text("Penjualan dan kas tunai tersimpan lokal. Periksa pembayaran QRIS di aplikasi penyedia.", modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 10.dp, bottom = 16.dp), color = Muted, fontSize = 11.sp)
+        Spacer(Modifier.height(16.dp))
         if (state.receivables.isEmpty()) TextButton(onClick = onCredit) { Text("Buka kasbon pelanggan →") }
         if (state.receivables.isNotEmpty()) {
             SectionHeading("Kasbon lokal", "${state.receivables.size} catatan")
@@ -415,7 +382,7 @@ private fun SectionHeading(title: String, detail: String) {
 
 @Composable
 private fun ProductCard(product: Product, canAdd: Boolean, modifier: Modifier = Modifier, selected: Int = 0, onAdd: () -> Unit) {
-    Surface(modifier = modifier, color = Color.White, shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Line)) {
+    Surface(modifier = modifier.clip(RoundedCornerShape(16.dp)).clickable(enabled = canAdd, role = Role.Button, onClickLabel = "Tambah ${product.name} ke keranjang", onClick = onAdd), color = Color.White, shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, Line)) {
         Column(Modifier.padding(10.dp)) {
             Box(Modifier.fillMaxWidth().height(86.dp).clip(RoundedCornerShape(10.dp)).background(Background), contentAlignment = Alignment.Center) {
                 ProductPhoto(product, modifier = Modifier.fillMaxSize().padding(4.dp))
@@ -428,12 +395,7 @@ private fun ProductCard(product: Product, canAdd: Boolean, modifier: Modifier = 
             Spacer(Modifier.height(5.dp))
             Text(rupiah(product.price), color = Blue, fontSize = 15.sp, fontWeight = FontWeight.ExtraBold)
             Spacer(Modifier.height(5.dp))
-            Text(if (product.stock == 0) "Stok habis" else "Stok ${product.stock} pcs", color = if (product.needsRestock()) Danger else Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(10.dp))
-            OutlinedButton(onClick = onAdd, enabled = canAdd, modifier = Modifier.fillMaxWidth().height(36.dp), contentPadding = PaddingValues(0.dp), shape = RoundedCornerShape(9.dp), border = androidx.compose.foundation.BorderStroke(1.dp, if (canAdd) Blue else Line)) {
-                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                Text(if (canAdd) " Tambah" else if (product.stock == 0) " Habis" else " Maks. stok", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            }
+            Text(when { product.stock == 0 -> "Stok habis"; !canAdd -> "Maksimal stok dipilih"; else -> "Stok ${product.stock} pcs" }, color = if (product.needsRestock()) Danger else Muted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }

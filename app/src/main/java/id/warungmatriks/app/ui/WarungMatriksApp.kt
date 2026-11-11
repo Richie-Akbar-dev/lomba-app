@@ -52,7 +52,7 @@ internal fun WarungMatriksApp(account: SignedInAccount, onSignOut: () -> Unit, s
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             when (screen) {
-                Screen.KASIR -> CashierScreen(cashierState, ownerId = account.uid, cashierName = account.shop.ownerName, shopName = account.shop.shopName, onNotifications = { navigate(Screen.NOTIFIKASI) }, onAccount = { navigate(Screen.AKUN) }, onCash = { navigate(Screen.KAS) }, onInventory = { navigate(Screen.BARANG) }, onAddProduct = { editingProductId = null; navigate(Screen.TAMBAH) }, onCredit = { pendingCredit = null; navigate(Screen.KASBON) }, onCreditCheckout = { pendingCredit = it; navigate(Screen.KASBON) })
+                Screen.KASIR -> CashierScreen(cashierState, ownerId = account.uid, cashierName = account.shop.ownerName, shopName = account.shop.shopName, onNotifications = { navigate(Screen.NOTIFIKASI) }, onAccount = { navigate(Screen.AKUN) }, onCash = { navigate(Screen.KAS) }, onCredit = { pendingCredit = null; navigate(Screen.KASBON) }, onCreditCheckout = { pendingCredit = it; navigate(Screen.KASBON) })
                 Screen.PESANAN -> OrdersScreen(ownerId = account.uid, shopName = account.shop.shopName, onNotifications = { navigate(Screen.NOTIFIKASI) }, onAccount = { navigate(Screen.AKUN) })
                 Screen.BARANG -> InventoryScreen(ownerId = account.uid, onAdd = { editingProductId = null; navigate(Screen.TAMBAH) }, onEdit = { editingProductId = it; navigate(Screen.TAMBAH) }, shopName = account.shop.shopName, onNotifications = { navigate(Screen.NOTIFIKASI) }, onAccount = { navigate(Screen.AKUN) })
                 Screen.LAPORAN -> ReportsScreen(ownerId = account.uid, shopName = account.shop.shopName)
