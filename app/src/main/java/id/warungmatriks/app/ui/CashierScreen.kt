@@ -402,26 +402,32 @@ private fun ProductCard(product: Product, canAdd: Boolean, modifier: Modifier = 
 
 @Composable
 private fun CartItem(product: Product, quantity: Int, onMinus: () -> Unit, onPlus: () -> Unit, onRemove: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-        ProductPhoto(product, modifier = Modifier.size(43.dp).clip(RoundedCornerShape(8.dp)).background(Background))
-        Spacer(Modifier.width(8.dp))
-        Column(Modifier.weight(1f)) {
-            Text(product.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(rupiah(product.price.toLong() * quantity), fontSize = 12.sp, color = Blue, fontWeight = FontWeight.Bold)
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            ProductPhoto(product, modifier = Modifier.size(43.dp).clip(RoundedCornerShape(8.dp)).background(Background))
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(product.name, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(rupiah(product.price.toLong() * quantity), fontSize = 12.sp, color = Blue, fontWeight = FontWeight.Bold)
+            }
         }
-        QuantityButton("Kurangi ${product.name}", Icons.Default.Remove, onMinus)
-        Text("$quantity", modifier = Modifier.padding(horizontal = 5.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        QuantityButton("Tambah ${product.name}", Icons.Default.Add, onPlus, enabled = quantity < product.stock)
-        IconButton(onClick = onRemove, modifier = Modifier.size(30.dp)) {
-            Icon(Icons.Default.Close, contentDescription = "Hapus ${product.name}", tint = Muted, modifier = Modifier.size(17.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.End) {
+            QuantityButton("Kurangi ${product.name}", Icons.Default.Remove, onMinus)
+            Box(Modifier.widthIn(min = 40.dp).padding(horizontal = 4.dp), contentAlignment = Alignment.Center) {
+                Text("$quantity", fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+            }
+            QuantityButton("Tambah ${product.name}", Icons.Default.Add, onPlus, enabled = quantity < product.stock)
+            IconButton(onClick = onRemove, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Default.Close, contentDescription = "Hapus ${product.name}", tint = Muted, modifier = Modifier.size(20.dp))
+            }
         }
     }
 }
 
 @Composable
 private fun QuantityButton(description: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit, enabled: Boolean = true) {
-    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(28.dp).border(1.dp, Line, RoundedCornerShape(7.dp))) {
-        Icon(icon, contentDescription = description, modifier = Modifier.size(16.dp), tint = if (enabled) Blue else Muted)
+    IconButton(onClick = onClick, enabled = enabled, modifier = Modifier.size(48.dp).border(1.dp, Line, RoundedCornerShape(7.dp))) {
+        Icon(icon, contentDescription = description, modifier = Modifier.size(18.dp), tint = if (enabled) Blue else Muted)
     }
 }
 
@@ -430,6 +436,16 @@ private fun AmountRow(label: String, amount: String, bold: Boolean = false, valu
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text(label, fontSize = if (bold) 14.sp else 13.sp, color = if (bold) Ink else Muted, fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal)
         Text(amount, fontSize = if (bold) 16.sp else 13.sp, color = valueColor, fontWeight = if (bold) FontWeight.Bold else FontWeight.SemiBold)
+    }
+}
+
+@Preview(showBackground = true, widthDp = 320, fontScale = 1.3f, name = "Keranjang pada layar kecil")
+@Composable
+private fun CartItemPreview() {
+    WarungMatriksTheme {
+        Surface(color = White) {
+            CartItem(Product("preview", "Barang dengan nama panjang", 3500, null, 200), 120, {}, {}, {})
+        }
     }
 }
 
