@@ -34,6 +34,92 @@ class CashierStoreTest {
         } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
     }
 
+    @Test fun displayNumbersAreStableAccountScopedAndWrap() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "numbers-" + UUID.randomUUID() + ".db"
+        val owner = CashierStore(context, "owner", dbName)
+        val other = CashierStore(context, "other", dbName)
+        try {
+            val item = Product("item", "Barang", 5000, 3000, 6)
+            owner.saveProduct(item); other.saveProduct(item)
+            owner.checkout("one", listOf(CashierLine(item, 1)), 5000, "")
+            owner.checkout("one", listOf(CashierLine(item, 1)), 5000, "")
+            other.checkout("other", listOf(CashierLine(item, 1)), 5000, "")
+            owner.checkout("two", listOf(CashierLine(item, 1)), 5000, "")
+            assertEquals(mapOf("one" to 1, "two" to 2), owner.saleHistory(null, null, SaleHistoryFilter.ALL).sales.associate { it.id to it.displayNumber })
+            assertEquals(1, other.saleHistory(null, null, SaleHistoryFilter.ALL).sales.single().displayNumber)
+            owner.writableDatabase.execSQL("UPDATE sale_number_counters SET last_number=999999 WHERE owner_id='owner'")
+            owner.checkout("wrapped", listOf(CashierLine(item, 1)), 5000, "")
+            assertEquals(1, owner.saleHistory(null, null, SaleHistoryFilter.ALL).sales.first { it.id == "wrapped" }.displayNumber)
+            assertEquals(1, owner.saleHistory(null, null, SaleHistoryFilter.ALL).sales.first { it.id == "one" }.displayNumber)
+        } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun failedSaleDoesNotConsumeNumberOrStock() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "number-rollback-" + UUID.randomUUID() + ".db"
+        val store = CashierStore(context, "owner", dbName)
+        try {
+            val item = Product("item", "Barang", 5000, 3000, 3)
+            store.saveProduct(item)
+            store.writableDatabase.execSQL("CREATE TRIGGER fail_sale BEFORE INSERT ON sales BEGIN SELECT RAISE(ABORT, 'test failure'); END")
+            try { store.checkout("failed", listOf(CashierLine(item, 1)), 5000, ""); fail("Sale must fail") } catch (_: android.database.sqlite.SQLiteException) { }
+            assertEquals(3, store.stocks().getValue(item.id))
+            store.writableDatabase.execSQL("DROP TRIGGER fail_sale")
+            store.checkout("success", listOf(CashierLine(item, 1)), 5000, "")
+            assertEquals(1, store.saleHistory(null, null, SaleHistoryFilter.ALL).sales.single().displayNumber)
+        } finally { store.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun upgradeV7NumbersExistingSalesAndPreservesInternalIds() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "numbers-v7-" + UUID.randomUUID() + ".db"
+        val before = CashierStore(context, "owner", dbName)
+        val item = Product("item", "Barang", 5000, 3000, 5)
+        before.saveProduct(item)
+        before.checkout("old-a", listOf(CashierLine(item, 1)), 5000, "")
+        before.checkout("old-b", listOf(CashierLine(item, 1)), 5000, "")
+        val now = System.currentTimeMillis()
+        before.writableDatabase.execSQL("UPDATE sales SET created_at=? WHERE id='old-a'", arrayOf(now - 2000))
+        before.writableDatabase.execSQL("UPDATE sales SET created_at=? WHERE id='old-b'", arrayOf(now - 1000))
+        downgradeNumbersToV7(before); before.writableDatabase.version = 7; before.close()
+        val after = CashierStore(context, "owner", dbName)
+        try {
+            assertEquals(mapOf("old-a" to 1, "old-b" to 2), after.saleHistory(null, null, SaleHistoryFilter.ALL).sales.associate { it.id to it.displayNumber })
+            after.checkout("new", listOf(CashierLine(item, 1)), 5000, "")
+            assertEquals(3, after.saleHistory(null, null, SaleHistoryFilter.ALL).sales.first { it.id == "new" }.displayNumber)
+            assertEquals(1, after.saleItemSnapshots("old-a").size)
+        } finally { after.close(); context.deleteDatabase(dbName) }
+    }
+
+    @Test fun dateSummaryUsesVisibleSalesAndOutstandingIsCurrent() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "range-" + UUID.randomUUID() + ".db"
+        val owner = CashierStore(context, "owner", dbName)
+        val other = CashierStore(context, "other", dbName)
+        try {
+            val item = Product("item", "Barang", 5000, 3000, 6)
+            owner.saveProduct(item); other.saveProduct(item)
+            owner.checkout("old-paid", listOf(CashierLine(item, 1)), 5000, "")
+            owner.checkout("old-credit", listOf(CashierLine(item, 1)), 0, "Nama")
+            owner.checkout("recent", listOf(CashierLine(item, 1)), 5000, "")
+            other.checkout("other-credit", listOf(CashierLine(item, 1)), 0, "Lain")
+            val now = System.currentTimeMillis()
+            owner.writableDatabase.execSQL("UPDATE sales SET created_at=? WHERE id IN ('old-paid','old-credit')", arrayOf(now - 8L * 24 * 60 * 60 * 1000))
+            val start = now - 10L * 24 * 60 * 60 * 1000
+            val end = now + 60000
+            val visible = owner.saleHistory(start, end, SaleHistoryFilter.ALL, now = now).sales
+            val summary = owner.visibleSaleHistorySummary(start, end, now)
+            assertEquals(setOf("old-credit", "recent"), visible.map { it.id }.toSet())
+            assertEquals(visible.size.toLong(), summary.count)
+            assertEquals(visible.sumOf { it.total.toLong() }, summary.total)
+            assertEquals(5000L, owner.outstandingCreditTotal())
+            owner.payCredit("part", "old-credit", 1000)
+            assertEquals(4000L, owner.outstandingCreditTotal())
+            assertEquals(5000L, other.outstandingCreditTotal())
+        } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
+    }
+
     @Test fun partialPaymentSavesDebtAndDeduplicatesRetry() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val store = CashierStore(context, "test-" + UUID.randomUUID())
@@ -420,8 +506,18 @@ class CashierStoreTest {
         } finally { after.close(); context.deleteDatabase(dbName) }
     }
 
+    private fun downgradeNumbersToV7(store: CashierStore) {
+        val db = store.writableDatabase
+        db.execSQL("DROP TABLE sale_number_counters")
+        db.execSQL("ALTER TABLE sales RENAME TO sales_v8")
+        db.execSQL("CREATE TABLE sales (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, created_at INTEGER NOT NULL, total INTEGER NOT NULL, received INTEGER NOT NULL, change_amount INTEGER NOT NULL, debt INTEGER NOT NULL, customer TEXT, payment_method TEXT NOT NULL DEFAULT 'cash')")
+        db.execSQL("INSERT INTO sales SELECT id,owner_id,created_at,total,received,change_amount,debt,customer,payment_method FROM sales_v8")
+        db.execSQL("DROP TABLE sales_v8")
+    }
+
     // Build an actual pre-v6 credit schema when exercising old-version migrations.
     private fun downgradeCreditToV5(store: CashierStore) {
+        downgradeNumbersToV7(store)
         val db = store.writableDatabase
         db.execSQL("DROP TABLE credit_payments")
         db.execSQL("ALTER TABLE receivables RENAME TO receivables_v6")

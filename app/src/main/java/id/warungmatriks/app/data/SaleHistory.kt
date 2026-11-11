@@ -11,6 +11,7 @@ internal data class SaleRecord(
     val initialDebt: Int,
     val customer: String?,
     val paymentMethod: String = "cash",
+    val displayNumber: Int? = null,
 ) {
     val cashApplied: Int get() = received - change
 }
@@ -27,3 +28,7 @@ internal fun grossProfitForSale(items: List<SaleItemSnapshot>): Long? {
         }
     } catch (_: ArithmeticException) { null }
 }
+
+/** Display numbers wrap; internal sale IDs remain unique. */
+internal fun nextSaleDisplayNumber(previous: Int): Int = if (previous >= 999_999) 1 else previous + 1
+internal fun saleDisplayNumber(number: Int?): String = number?.let { "#" + it.toString().padStart(6, '0') } ?: "—"

@@ -5,6 +5,14 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class SaleHistoryTest {
+    @Test fun displayNumberWrapsAndFormats() {
+        assertEquals(1, nextSaleDisplayNumber(0))
+        assertEquals(999999, nextSaleDisplayNumber(999998))
+        assertEquals(1, nextSaleDisplayNumber(999999))
+        assertEquals("#000001", saleDisplayNumber(1))
+        assertEquals("#999999", saleDisplayNumber(999999))
+    }
+
     @Test fun grossProfitUsesHistoricalCosts() {
         val items = listOf(
             SaleItemSnapshot("Indomie", 3, 3500, 2700),

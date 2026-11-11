@@ -15,7 +15,7 @@ internal data class CheckoutResult(val total: Int, val received: Int, val change
 
 /** One per-account local catalogue, stock and prototype transaction store. */
 internal class CashierStore(context: Context, private val ownerId: String, databaseName: String = "cashier_prototype.db") :
-    SQLiteOpenHelper(context.applicationContext, databaseName, null, 7) {
+    SQLiteOpenHelper(context.applicationContext, databaseName, null, 8) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE stock (owner_id TEXT NOT NULL, product_id TEXT NOT NULL, quantity INTEGER NOT NULL CHECK(quantity >= 0), PRIMARY KEY(owner_id, product_id))")
         db.execSQL("CREATE TABLE sales (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, created_at INTEGER NOT NULL, total INTEGER NOT NULL, received INTEGER NOT NULL, change_amount INTEGER NOT NULL, debt INTEGER NOT NULL, customer TEXT, payment_method TEXT NOT NULL DEFAULT 'cash')")
@@ -27,6 +27,35 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         createStockAdditions(db)
         upgradeCredit(db)
         addSaleCategory(db)
+        addSaleDisplayNumbers(db)
+    }
+
+    // The short number is presentation only. Internal IDs and references stay unchanged.
+    private fun addSaleDisplayNumbers(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE sales ADD COLUMN display_number INTEGER")
+        db.execSQL("CREATE TABLE sale_number_counters (owner_id TEXT PRIMARY KEY NOT NULL, last_number INTEGER NOT NULL)")
+        val counters = mutableMapOf<String, Int>()
+        db.rawQuery("SELECT id, owner_id FROM sales ORDER BY owner_id, created_at, id", null).use { cursor ->
+            while (cursor.moveToNext()) {
+                val id = cursor.getString(0)
+                val owner = cursor.getString(1)
+                val number = nextSaleDisplayNumber(counters[owner] ?: 0)
+                counters[owner] = number
+                db.execSQL("UPDATE sales SET display_number=? WHERE id=?", arrayOf(number, id))
+            }
+        }
+        counters.forEach { (owner, number) ->
+            db.execSQL("INSERT INTO sale_number_counters(owner_id, last_number) VALUES(?, ?)", arrayOf(owner, number))
+        }
+    }
+
+    // Called inside the same transaction as the sale, after checking its internal ID.
+    private fun allocateSaleDisplayNumber(db: SQLiteDatabase): Int {
+        db.execSQL("INSERT OR IGNORE INTO sale_number_counters(owner_id, last_number) VALUES(?, 0)", arrayOf(ownerId))
+        db.execSQL("UPDATE sale_number_counters SET last_number=CASE WHEN last_number>=999999 THEN 1 ELSE last_number+1 END WHERE owner_id=?", arrayOf(ownerId))
+        return db.rawQuery("SELECT last_number FROM sale_number_counters WHERE owner_id=?", arrayOf(ownerId)).use { cursor ->
+            check(cursor.moveToFirst()); cursor.getInt(0)
+        }
     }
 
     private fun addSaleCategory(db: SQLiteDatabase) {
@@ -88,6 +117,7 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         }
         if (oldVersion < 6) upgradeCredit(db)
         if (oldVersion < 7) addSaleCategory(db)
+        if (oldVersion < 8) addSaleDisplayNumbers(db)
     }
 
     suspend fun products(): List<Product> = withContext(Dispatchers.IO) {
@@ -311,8 +341,8 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         }
         args += (limit + 1).toString()
         val records = mutableListOf<SaleRecord>()
-        readableDatabase.rawQuery("SELECT id,created_at,total,received,change_amount,debt,customer,payment_method FROM sales WHERE ${conditions.joinToString(" AND ")} ORDER BY created_at DESC,id DESC LIMIT ?", args.toTypedArray()).use { c ->
-            while (c.moveToNext()) records += SaleRecord(c.getString(0), c.getLong(1), c.getInt(2), c.getInt(3), c.getInt(4), c.getInt(5), c.getString(6), c.getString(7))
+        readableDatabase.rawQuery("SELECT id,created_at,total,received,change_amount,debt,customer,payment_method,display_number FROM sales WHERE ${conditions.joinToString(" AND ")} ORDER BY created_at DESC,id DESC LIMIT ?", args.toTypedArray()).use { c ->
+            while (c.moveToNext()) records += SaleRecord(c.getString(0), c.getLong(1), c.getInt(2), c.getInt(3), c.getInt(4), c.getInt(5), c.getString(6), c.getString(7), if (c.isNull(8)) null else c.getInt(8))
         }
         val page = records.take(limit)
         SaleHistoryPage(page, if (records.size > limit) page.last().let { SaleCursor(it.createdAt, it.id) } else null)
@@ -324,6 +354,23 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         readableDatabase.rawQuery("SELECT COUNT(*), COALESCE(SUM(total),0), COALESCE(SUM(received-change_amount),0), COALESCE(SUM(debt),0), COALESCE(SUM(CASE WHEN payment_method='qris' THEN total ELSE 0 END),0) FROM sales WHERE owner_id=? AND created_at>=? AND created_at<?", arrayOf(ownerId, start.toString(), end.toString())).use { c ->
             check(c.moveToFirst())
             SaleHistorySummary(c.getLong(0), c.getLong(1), c.getLong(2), c.getLong(3), c.getLong(4))
+        }
+    }
+
+    // Mirrors the visibility rule of saleHistory so the displayed figures and list agree.
+    suspend fun visibleSaleHistorySummary(start: Long, end: Long, now: Long = System.currentTimeMillis()): SaleHistorySummary = withContext(Dispatchers.IO) {
+        require(start < end)
+        val db = writableDatabase
+        HistoryRetention.clean(db, now, ownerId)
+        db.rawQuery("SELECT COUNT(*), COALESCE(SUM(total),0), COALESCE(SUM(received-change_amount),0), COALESCE(SUM(debt),0), COALESCE(SUM(CASE WHEN payment_method='qris' THEN total ELSE 0 END),0) FROM sales WHERE owner_id=? AND created_at>=? AND created_at<? AND (created_at > ? OR EXISTS (SELECT 1 FROM receivables r WHERE r.sale_id=sales.id AND r.owner_id=sales.owner_id AND r.amount_remaining>0))", arrayOf(ownerId, start.toString(), end.toString(), (now - HistoryRetention.RETENTION_MS).toString())).use { c ->
+            check(c.moveToFirst())
+            SaleHistorySummary(c.getLong(0), c.getLong(1), c.getLong(2), c.getLong(3), c.getLong(4))
+        }
+    }
+
+    suspend fun outstandingCreditTotal(): Long = withContext(Dispatchers.IO) {
+        readableDatabase.rawQuery("SELECT COALESCE(SUM(amount_remaining),0) FROM receivables WHERE owner_id=? AND amount_remaining>0", arrayOf(ownerId)).use { c ->
+            check(c.moveToFirst()); c.getLong(0)
         }
     }
 
@@ -384,7 +431,8 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
                 } finally { update.close() }
             }
             val createdAt = System.currentTimeMillis()
-            db.execSQL("INSERT INTO sales (id, owner_id, created_at, total, received, change_amount, debt, customer, payment_method) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", arrayOf(id, ownerId, createdAt, total, received, change, debt, if (debt > 0) name else null, method))
+            val displayNumber = allocateSaleDisplayNumber(db)
+            db.execSQL("INSERT INTO sales (id, owner_id, created_at, total, received, change_amount, debt, customer, payment_method, display_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", arrayOf(id, ownerId, createdAt, total, received, change, debt, if (debt > 0) name else null, method, displayNumber))
             lines.forEach { line ->
                 db.execSQL("INSERT INTO sale_items (sale_id, product_id, product_name, quantity, price, cost, category) VALUES (?, ?, ?, ?, ?, ?, ?)", arrayOf(id, line.product.id, line.product.name, line.quantity, line.product.price, line.product.cost, line.product.category))
             }

@@ -1,12 +1,18 @@
 package id.warungmatriks.app.ui
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -16,6 +22,8 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.text.font.FontWeight
@@ -30,15 +38,22 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
-private fun dayWindow(now: Long = System.currentTimeMillis()): Pair<Long, Long> {
-    val calendar = Calendar.getInstance().apply {
-        timeInMillis = now
-        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
-    }
-    val start = calendar.timeInMillis
-    calendar.add(Calendar.DAY_OF_YEAR, 1)
-    return start to calendar.timeInMillis
+// DateRangePicker days are UTC midnights; turn their calendar dates into local day boundaries.
+private val pickerTimeZone: TimeZone = TimeZone.getTimeZone("UTC")
+private fun todayPickerDay(): Long {
+    val local = Calendar.getInstance()
+    return Calendar.getInstance(pickerTimeZone).apply {
+        clear(); set(local.get(Calendar.YEAR), local.get(Calendar.MONTH), local.get(Calendar.DAY_OF_MONTH))
+    }.timeInMillis
+}
+private fun localDayFromPicker(utcDay: Long, nextDay: Boolean = false): Long {
+    val utc = Calendar.getInstance(pickerTimeZone).apply { timeInMillis = utcDay }
+    return Calendar.getInstance().apply {
+        clear(); set(utc.get(Calendar.YEAR), utc.get(Calendar.MONTH), utc.get(Calendar.DAY_OF_MONTH))
+        if (nextDay) add(Calendar.DAY_OF_MONTH, 1)
+    }.timeInMillis
 }
 private fun dateText(time: Long, pattern: String) = SimpleDateFormat(pattern, Locale("id", "ID")).format(Date(time))
 
@@ -49,10 +64,13 @@ internal fun OrdersScreen(ownerId: String, shopName: String = "Warung Matriks", 
     val store = remember(context, ownerId) { CashierStore(context, ownerId) }
     val scope = rememberCoroutineScope()
     var section by rememberSaveable { mutableStateOf("Penjualan") }
-    var period by rememberSaveable { mutableStateOf("Hari ini") }
-    var filter by rememberSaveable { mutableStateOf(SaleHistoryFilter.ALL.name) }
+    var startDay by rememberSaveable { mutableLongStateOf(todayPickerDay()) }
+    var endDay by rememberSaveable { mutableLongStateOf(todayPickerDay()) }
+    var showCalendar by remember { mutableStateOf(false) }
     var revision by remember { mutableIntStateOf(0) }
-    val window = remember(revision) { dayWindow() }
+    val start = localDayFromPicker(startDay)
+    val end = localDayFromPicker(endDay, nextDay = true)
+    var creditTotal by remember { mutableStateOf<Long?>(null) }
     var summary by remember { mutableStateOf<SaleHistorySummary?>(null) }
     var entries by remember { mutableStateOf<List<SaleRecord>>(emptyList()) }
     var next by remember { mutableStateOf<SaleCursor?>(null) }
@@ -64,16 +82,18 @@ internal fun OrdersScreen(ownerId: String, shopName: String = "Warung Matriks", 
     var itemSnapshots by remember { mutableStateOf<List<SaleItemSnapshot>?>(null) }
     var detailError by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(store, period, filter, revision, inspection) {
-        loading = true; loadingMore = false; error = null; pageError = null; entries = emptyList(); next = null; summary = null
+    LaunchedEffect(store, start, end, revision, inspection) {
+        loading = true; loadingMore = false; error = null; pageError = null; entries = emptyList(); next = null; summary = null; creditTotal = null
         try {
             if (inspection) {
-                entries = listOf(SaleRecord("contoh-preview", System.currentTimeMillis(), 10500, 4000, 0, 6500, "Bu RT"))
-                summary = SaleHistorySummary(1, 10500, 4000, 6500)
+                entries = listOf(SaleRecord("contoh-preview", System.currentTimeMillis(), 10500, 4000, 0, 6500, "Bu RT", displayNumber = 1))
+                summary = SaleHistorySummary(1, 10500, 4000, 6500); creditTotal = 6500
             } else {
-                val daySummary = store.saleHistorySummary(window.first, window.second)
-                val page = store.saleHistory(if (period == "Hari ini") window.first else null, if (period == "Hari ini") window.second else null, SaleHistoryFilter.valueOf(filter))
-                summary = daySummary; entries = page.sales; next = page.next
+                val now = System.currentTimeMillis()
+                val rangeSummary = store.visibleSaleHistorySummary(start, end, now)
+                val page = store.saleHistory(start, end, SaleHistoryFilter.ALL, now = now)
+                val outstanding = store.outstandingCreditTotal()
+                summary = rangeSummary; creditTotal = outstanding; entries = page.sales; next = page.next
             }
         } catch (e: CancellationException) { throw e } catch (_: Exception) { error = "Riwayat belum dapat dimuat. Coba lagi." } finally { loading = false }
     }
@@ -89,18 +109,18 @@ internal fun OrdersScreen(ownerId: String, shopName: String = "Warung Matriks", 
     fun loadMore() {
         val cursor = next ?: return
         if (loadingMore) return
-        val requestedPeriod = period; val requestedFilter = filter; val requestedRevision = revision
+        val requestedStart = start; val requestedEnd = end; val requestedStartDay = startDay; val requestedEndDay = endDay; val requestedRevision = revision
         loadingMore = true; pageError = null
         scope.launch {
             try {
-                val page = store.saleHistory(if (requestedPeriod == "Hari ini") window.first else null, if (requestedPeriod == "Hari ini") window.second else null, SaleHistoryFilter.valueOf(requestedFilter), cursor)
-                if (period == requestedPeriod && filter == requestedFilter && revision == requestedRevision) {
+                val page = store.saleHistory(requestedStart, requestedEnd, SaleHistoryFilter.ALL, cursor)
+                if (startDay == requestedStartDay && endDay == requestedEndDay && revision == requestedRevision) {
                     entries = entries + page.sales; next = page.next
                 }
             } catch (e: CancellationException) { throw e } catch (_: Exception) {
-                if (period == requestedPeriod && filter == requestedFilter && revision == requestedRevision) pageError = "Riwayat berikutnya belum dapat dimuat."
+                if (startDay == requestedStartDay && endDay == requestedEndDay && revision == requestedRevision) pageError = "Riwayat berikutnya belum dapat dimuat."
             } finally {
-                if (period == requestedPeriod && filter == requestedFilter && revision == requestedRevision) loadingMore = false
+                if (startDay == requestedStartDay && endDay == requestedEndDay && revision == requestedRevision) loadingMore = false
             }
         }
     }
@@ -114,10 +134,9 @@ internal fun OrdersScreen(ownerId: String, shopName: String = "Warung Matriks", 
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Warung Matriks • $shopName", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Ink, maxLines = 1)
-                    Text("Pesanan • data di perangkat", fontSize = 11.sp, color = Muted)
                 }
                 IconButton(onClick = onNotifications) { Icon(Icons.Default.NotificationsNone, "Notifikasi", tint = Ink) }
-                IconButton(onClick = onAccount, modifier = Modifier.size(38.dp).background(Blue, RoundedCornerShape(50))) { Icon(Icons.Default.Person, "Akun", tint = White) }
+                IconButton(onClick = onAccount, modifier = Modifier.size(38.dp).background(PaleBlue, CircleShape)) { Icon(Icons.Default.PersonOutline, "Buka akun", tint = Blue, modifier = Modifier.size(22.dp)) }
             }
         }
         item {
@@ -125,9 +144,9 @@ internal fun OrdersScreen(ownerId: String, shopName: String = "Warung Matriks", 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("Ringkasan Penjualan", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
-                    Text(dateText(window.first, "dd MMMM yyyy") + " • sesuai jam perangkat", fontSize = 11.sp, color = Muted)
+                    Text(if (startDay == endDay) dateText(start, "dd MMM yyyy") else "${dateText(start, "dd MMM yyyy")} – ${dateText(localDayFromPicker(endDay), "dd MMM yyyy")}", fontSize = 11.sp, color = Muted)
                 }
-                DemoLabel(if (inspection) "PREVIEW" else "HARI INI")
+                IconButton(onClick = { showCalendar = true }) { Icon(Icons.Default.CalendarToday, "Pilih rentang tanggal", tint = Blue) }
             }
             Spacer(Modifier.height(10.dp))
             val current = summary
@@ -135,18 +154,12 @@ internal fun OrdersScreen(ownerId: String, shopName: String = "Warung Matriks", 
             else {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OrdersMetric("Penjualan", rupiah(current.total), Icons.Default.ReceiptLong, Modifier.weight(1f))
-                    OrdersMetric("Transaksi", current.count.toString(), Icons.Default.ShoppingCart, Modifier.weight(1f))
+                    OrdersMetric("Sisa kasbon saat ini", creditTotal?.let { rupiah(it) } ?: "—", Icons.Default.AccountBalanceWallet, Modifier.weight(1f))
                 }
                 Spacer(Modifier.height(8.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OrdersMetric("Tunai masuk", rupiah(current.cashApplied), Icons.Default.AccountBalanceWallet, Modifier.weight(1f))
                     OrdersMetric("QRIS dicatat", rupiah(current.qrisTotal), Icons.Default.QrCode, Modifier.weight(1f))
-                }
-                Spacer(Modifier.height(8.dp))
-                DemoCard {
-                    InfoLine("Kasbon saat transaksi", rupiah(current.initialDebt))
-                    Spacer(Modifier.height(6.dp))
-                    DemoNote("Bukan saldo laci atau sisa kasbon saat ini. Nilai QRIS dicatat tanpa bukti pembayaran dan bukan saldo bank.")
                 }
             }
         }
@@ -159,26 +172,20 @@ internal fun OrdersScreen(ownerId: String, shopName: String = "Warung Matriks", 
             item { DemoCard { Text("Kulakan belum tersedia", fontWeight = FontWeight.Bold); Spacer(Modifier.height(8.dp)); DemoNote("Pencatatan kulakan dan stok masuk belum dibuat. Tidak ada transaksi kulakan yang ditampilkan sebagai data nyata.") } }
         } else {
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("Hari ini", "Semua tanggal").forEach { label -> FilterChip(selected = period == label, onClick = { period = label }, label = { Text(label, fontSize = 12.sp) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Blue, selectedLabelColor = White)) }
-                }
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                    listOf(SaleHistoryFilter.ALL to "Semua", SaleHistoryFilter.PAID_AT_SALE to "Tunai lunas", SaleHistoryFilter.CREDIT_AT_SALE to "Kasbon", SaleHistoryFilter.QRIS to "QRIS").forEach { (value, label) ->
-                        FilterChip(selected = filter == value.name, onClick = { filter = value.name }, label = { Text(label, fontSize = 11.sp) }, colors = FilterChipDefaults.filterChipColors(selectedContainerColor = Blue, selectedLabelColor = White))
-                    }
-                }
-                DemoNote("Filter tunai lunas/kasbon berdasarkan kondisi saat transaksi, bukan status pelunasan terbaru. QRIS terpisah karena pembayaran tidak diverifikasi.")
-            }
-            item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Riwayat penjualan", fontSize = 17.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { revision++ }) { Text("Muat ulang") }
+                    val rotation = rememberInfiniteTransition(label = "Muat ulang").animateFloat(
+                        initialValue = 0f, targetValue = 360f,
+                        animationSpec = infiniteRepeatable(animation = tween(900, easing = LinearEasing), repeatMode = RepeatMode.Restart), label = "Putar"
+                    )
+                    IconButton(onClick = { revision++ }, enabled = !loading) {
+                        Icon(Icons.Default.Refresh, "Muat ulang", tint = Blue, modifier = Modifier.rotate(if (loading) rotation.value else 0f))
+                    }
                 }
-                DemoNote("Penjualan disembunyikan setelah 7 × 24 jam, lalu dibersihkan pada jadwal tanggal 1. Kasbon belum lunas tetap tersedia.")
                 if (inspection) DemoNote("Data berikut adalah contoh Preview.")
                 if (loading) DemoNote("Memuat riwayat...")
                 else if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                else if (entries.isEmpty()) DemoNote("Belum ada penjualan pada filter ini.")
+                else if (entries.isEmpty()) DemoNote("Tidak ada penjualan yang tersedia pada tanggal ini.")
             }
             items(entries, key = { it.id }) { sale -> SaleCard(sale) { selected = sale } }
             if (next != null || pageError != null) item {
@@ -187,7 +194,32 @@ internal fun OrdersScreen(ownerId: String, shopName: String = "Warung Matriks", 
             }
         }
     }
+    if (showCalendar) OrdersDateRangeDialog(startDay, endDay, onDismiss = { showCalendar = false }, onApply = { from, to ->
+        startDay = from; endDay = to; showCalendar = false
+    })
     selected?.let { sale -> SaleDetails(sale, itemSnapshots, detailError) { selected = null } }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun OrdersDateRangeDialog(startDay: Long, endDay: Long, onDismiss: () -> Unit, onApply: (Long, Long) -> Unit) {
+    val state = rememberDateRangePickerState(initialSelectedStartDateMillis = startDay, initialSelectedEndDateMillis = endDay)
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(shape = RoundedCornerShape(18.dp), color = White, modifier = Modifier.fillMaxWidth().fillMaxHeight(0.9f)) {
+            Column {
+                DateRangePicker(state = state, modifier = Modifier.weight(1f), title = { Text("Pilih rentang tanggal", modifier = Modifier.padding(start = 24.dp, top = 16.dp)) })
+                Text("Hanya data yang masih tersedia yang ditampilkan.", color = Muted, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 20.dp))
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Batal") }
+                    TextButton(enabled = state.selectedStartDateMillis != null && state.selectedEndDateMillis != null, onClick = {
+                        val from = state.selectedStartDateMillis
+                        val to = state.selectedEndDateMillis
+                        if (from != null && to != null) onApply(from, to)
+                    }) { Text("Terapkan") }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -214,7 +246,7 @@ private fun SaleCard(sale: SaleRecord, onDetails: () -> Unit) {
             }
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text("Penjualan #${sale.id.take(8)}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text("Penjualan ${saleDisplayNumber(sale.displayNumber)}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 Text(dateText(sale.createdAt, "dd MMM yyyy • HH:mm"), color = Muted, fontSize = 11.sp)
             }
             Text(rupiah(sale.total), color = Blue, fontWeight = FontWeight.Bold, fontSize = 15.sp)
@@ -231,7 +263,7 @@ private fun SaleCard(sale: SaleRecord, onDetails: () -> Unit) {
 private fun SaleDetails(sale: SaleRecord, snapshots: List<SaleItemSnapshot>?, error: String?, onClose: () -> Unit) {
     AlertDialog(onDismissRequest = onClose, title = { Text("Rincian penjualan") }, text = {
         Column(Modifier.heightIn(max = 450.dp).verticalScroll(rememberScrollState())) {
-            Text("ID: ${sale.id}", fontSize = 11.sp, color = Muted)
+            Text("ID: ${saleDisplayNumber(sale.displayNumber)}", fontSize = 11.sp, color = Muted)
             Text(dateText(sale.createdAt, "dd MMMM yyyy • HH:mm"), fontSize = 12.sp, color = Muted)
             sale.customer?.let { Text("Pelanggan: $it", fontSize = 12.sp, color = Muted) }
             Spacer(Modifier.height(10.dp))
@@ -252,14 +284,11 @@ private fun SaleDetails(sale: SaleRecord, snapshots: List<SaleItemSnapshot>?, er
                 DemoNote("Pencatatan QRIS bukan bukti bahwa pembayaran berhasil.")
             } else {
                 InfoLine("Tunai diserahkan", rupiah(sale.received)); Spacer(Modifier.height(6.dp))
-                InfoLine("Kembalian", rupiah(sale.change)); Spacer(Modifier.height(6.dp))
-                InfoLine("Tunai untuk penjualan", rupiah(sale.cashApplied)); Spacer(Modifier.height(6.dp))
+                val changeOrShortfall = if (sale.initialDebt > 0) -sale.initialDebt else sale.change
+                InfoLine("Kembalian / kekurangan saat transaksi", rupiah(changeOrShortfall)); Spacer(Modifier.height(6.dp))
             }
-            InfoLine("Kasbon saat transaksi", rupiah(sale.initialDebt)); Spacer(Modifier.height(6.dp))
             val gross = snapshots?.let { grossProfitForSale(it) }
             InfoLine("Laba kotor estimasi", gross?.let { rupiah(it) } ?: "Tidak diketahui")
-            Spacer(Modifier.height(8.dp))
-            DemoNote("Nama, harga dan modal berdasarkan saat transaksi. Laba kotor belum dikurangi biaya operasional; nilai kasbon adalah saat transaksi, bukan saldo terbaru.")
         }
     }, confirmButton = { TextButton(onClick = onClose) { Text("Tutup") } })
 }
