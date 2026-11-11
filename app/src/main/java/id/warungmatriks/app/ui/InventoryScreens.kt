@@ -92,7 +92,6 @@ internal fun InventoryScreen(ownerId: String, onAdd: () -> Unit, onEdit: (String
             }
         }
         Spacer(Modifier.height(10.dp))
-        DemoNote("Katalog awal berisi barang contoh, bukan data toko Anda. Periksa, ubah, atau nonaktifkan sebelum digunakan.")
         Spacer(Modifier.height(14.dp))
         Surface(color = White, shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, if (low.isNotEmpty()) MaterialTheme.colorScheme.errorContainer else Line)) {
             Column(Modifier.fillMaxWidth().padding(14.dp)) {

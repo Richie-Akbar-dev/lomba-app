@@ -14,10 +14,31 @@ import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class CashierStoreTest {
+    @Test fun newCatalogStaysEmptyAndExistingProductsArePreserved() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "empty-catalog-" + UUID.randomUUID() + ".db"
+        val owner = CashierStore(context, "owner", dbName)
+        val other = CashierStore(context, "other", dbName)
+        try {
+            assertTrue(owner.products().isEmpty())
+            owner.report()
+            assertTrue(owner.products().isEmpty())
+            val existing = DemoData.products.first().copy(name = "Barang lama diubah", stock = 4)
+            owner.saveProduct(existing)
+            owner.updateProduct(existing.copy(price = 4500))
+            owner.report()
+            assertEquals(listOf("Barang lama diubah"), owner.products().map { it.name })
+            assertEquals(4500, owner.products().single().price)
+            assertEquals(4, owner.products().single().stock)
+            assertTrue(other.products().isEmpty())
+        } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
+    }
+
     @Test fun partialPaymentSavesDebtAndDeduplicatesRetry() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val store = CashierStore(context, "test-" + UUID.randomUUID())
         val product = DemoData.products.first()
+        store.saveProduct(product)
         val before = store.stocks().getValue(product.id)
         val id = UUID.randomUUID().toString()
         val lines = listOf(CashierLine(product, 3))
@@ -36,6 +57,7 @@ class CashierStoreTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val store = CashierStore(context, "test-" + UUID.randomUUID())
         val product = DemoData.products.first()
+        store.saveProduct(product)
         val result = store.checkout(UUID.randomUUID().toString(), listOf(CashierLine(product, 1)), 0, "Pak Doni")
         assertEquals(product.price, result.debt)
         assertEquals(0, result.received)
@@ -47,6 +69,7 @@ class CashierStoreTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val store = CashierStore(context, "test-" + UUID.randomUUID())
         val product = DemoData.products.first()
+        store.saveProduct(product)
         val before = store.stocks().getValue(product.id)
         try {
             store.checkout(UUID.randomUUID().toString(), listOf(CashierLine(product, 1)), 0, "  ")
@@ -88,6 +111,7 @@ class CashierStoreTest {
             db.execSQL("CREATE TABLE cash_movements (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, amount INTEGER NOT NULL)")
             db.execSQL("CREATE TABLE receivables (sale_id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, customer TEXT NOT NULL, amount_remaining INTEGER NOT NULL)")
             db.execSQL("INSERT INTO stock VALUES ('owner','indomie',3)")
+            db.execSQL("INSERT INTO stock VALUES ('other','water',4)")
             db.execSQL("INSERT INTO sales VALUES ('old','owner',123,10500,4000,0,6500,'Bu RT')")
             db.execSQL("INSERT INTO sale_items VALUES ('old','indomie','Indomie Goreng',3,3500,2700)")
             db.execSQL("INSERT INTO cash_movements VALUES ('old','owner',4000)")
@@ -96,7 +120,9 @@ class CashierStoreTest {
         } finally { db.close() }
         val store = CashierStore(context, "owner", dbName)
         try {
-            assertEquals(3, store.stocks().getValue("indomie"))
+            assertEquals(mapOf("indomie" to 3), store.stocks())
+            val other = CashierStore(context, "other", dbName)
+            try { assertEquals(mapOf("water" to 4), other.stocks()) } finally { other.close() }
             assertEquals("old", store.saleHistory(null, null, SaleHistoryFilter.ALL).sales.single().id)
             assertEquals(6500, store.receivables().single().remaining)
             assertEquals("Indomie Goreng", store.saleItemSnapshots("old").single().productName)
@@ -475,7 +501,6 @@ class CashierStoreTest {
         try {
             val item = Product("p", "Barang", 5000, 3000, 5, category = "Uji")
             store.saveProduct(item); other.saveProduct(item)
-            DemoData.products.forEach { store.setProductActive(it.id, false) }
             store.checkout("cash", listOf(CashierLine(item, 1)), 5000, "")
             store.checkoutCredit("credit", listOf(CashierLine(item, 1)), 1000, "Siti", "08123456789", null, false)
             store.checkoutQris("qris", listOf(CashierLine(item, 1)))

@@ -60,6 +60,14 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         if (oldVersion < 2) {
             createProducts(db)
+            // Version 1 had stock but no product table. Restore only products with
+            // an existing stock row, for every owner; never create new stock here.
+            DemoData.products.forEach { product ->
+                db.execSQL(
+                    "INSERT OR IGNORE INTO products (owner_id, product_id, name, price, cost, category, minimum_stock, active) SELECT owner_id, product_id, ?, ?, ?, ?, ?, 1 FROM stock WHERE product_id = ?",
+                    arrayOf(product.name, product.price, product.cost, product.category, product.minimumStock, product.id),
+                )
+            }
             // Preserve historical sale lines; nullable cost means unknown, not zero.
             db.execSQL("ALTER TABLE sale_items RENAME TO sale_items_v1")
             createSaleItems(db)
@@ -82,16 +90,8 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         if (oldVersion < 7) addSaleCategory(db)
     }
 
-    private fun seed(db: SQLiteDatabase) {
-        DemoData.products.forEach { product ->
-            db.execSQL("INSERT OR IGNORE INTO products (owner_id, product_id, name, price, cost, category, minimum_stock, active) VALUES (?, ?, ?, ?, ?, ?, ?, 1)", arrayOf(ownerId, product.id, product.name, product.price, product.cost, product.category, product.minimumStock))
-            db.execSQL("INSERT OR IGNORE INTO stock (owner_id, product_id, quantity) VALUES (?, ?, ?)", arrayOf(ownerId, product.id, product.stock))
-        }
-    }
-
     suspend fun products(): List<Product> = withContext(Dispatchers.IO) {
         val db = writableDatabase
-        seed(db)
         val items = mutableListOf<Product>()
         db.rawQuery("SELECT p.product_id,p.name,p.price,p.cost,s.quantity,p.category,p.minimum_stock,p.photo_file,p.barcode,p.active FROM products p JOIN stock s ON p.owner_id=s.owner_id AND p.product_id=s.product_id WHERE p.owner_id=? ORDER BY p.name COLLATE NOCASE", arrayOf(ownerId)).use { c ->
             while (c.moveToNext()) {
@@ -110,7 +110,6 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         val db = writableDatabase
         db.beginTransaction()
         try {
-            seed(db)
             db.execSQL("INSERT INTO products (owner_id, product_id, name, price, cost, category, minimum_stock, photo_file, barcode, active) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", arrayOf(ownerId, product.id, product.name.trim(), product.price, product.cost, product.category, product.minimumStock, product.photoFile, product.barcode?.trim()?.takeIf { it.isNotEmpty() }, if (product.active) 1 else 0))
             db.execSQL("INSERT INTO stock (owner_id, product_id, quantity) VALUES (?, ?, ?)", arrayOf(ownerId, product.id, product.stock))
             db.setTransactionSuccessful()
@@ -258,7 +257,6 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
     suspend fun report(now: Long = System.currentTimeMillis()): ReportSnapshot = withContext(Dispatchers.IO) {
         val db = writableDatabase
         HistoryRetention.clean(db, now, ownerId)
-        seed(db)
         val (start, end) = reportMonthWindow(now)
         val args = arrayOf(ownerId, start.toString(), end.toString())
         db.beginTransaction()
@@ -366,7 +364,6 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         val db = writableDatabase
         db.beginTransaction()
         try {
-            seed(db)
             db.rawQuery("SELECT total, received, change_amount, debt, customer, payment_method FROM sales WHERE id = ? AND owner_id = ?", arrayOf(id, ownerId)).use { cursor ->
                 if (cursor.moveToFirst()) {
                     check(cursor.getString(5) == method) { "ID transaksi sudah digunakan untuk metode lain." }
