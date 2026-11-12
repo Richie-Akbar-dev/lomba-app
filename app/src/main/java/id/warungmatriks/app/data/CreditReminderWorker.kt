@@ -19,6 +19,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import id.warungmatriks.app.MainActivity
 import id.warungmatriks.app.auth.AuthRepository
+import id.warungmatriks.app.auth.creditReminderSessionLock
 import kotlinx.coroutines.CancellationException
 import java.util.concurrent.TimeUnit
 
@@ -42,8 +43,6 @@ class CreditReminderWorker(context: Context, params: WorkerParameters) : Corouti
                     manager.createNotificationChannel(NotificationChannel(channel, "Pengingat kasbon", NotificationManager.IMPORTANCE_DEFAULT))
                     if (manager.getNotificationChannel(channel)?.importance == NotificationManager.IMPORTANCE_NONE) return Result.success()
                 }
-                // Don't notify or consume reminders for a session that has since changed.
-                if (auth.currentUser()?.uid != owner) return Result.success()
                 val intent = Intent(applicationContext, MainActivity::class.java)
                 val pending = PendingIntent.getActivity(applicationContext, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
                 val notification = NotificationCompat.Builder(applicationContext, channel)
@@ -51,12 +50,16 @@ class CreditReminderWorker(context: Context, params: WorkerParameters) : Corouti
                     .setContentTitle("Pengingat kasbon")
                     .setContentText("Ada kasbon yang telah jatuh tempo. Buka aplikasi untuk memeriksa.")
                     .setAutoCancel(true).setContentIntent(pending).build()
-                NotificationManagerCompat.from(applicationContext).notify(CREDIT_REMINDER_NOTIFICATION_ID, notification)
-                if (auth.currentUser()?.uid != owner) {
-                    NotificationManagerCompat.from(applicationContext).cancel(CREDIT_REMINDER_NOTIFICATION_ID)
-                    return Result.success()
+                synchronized(creditReminderSessionLock) {
+                    // Local sign-out cannot happen between this check, notification and marking.
+                    if (auth.currentUser()?.uid != owner) return Result.success()
+                    NotificationManagerCompat.from(applicationContext).notify(CREDIT_REMINDER_NOTIFICATION_ID, notification)
+                    if (auth.currentUser()?.uid != owner) {
+                        NotificationManagerCompat.from(applicationContext).cancel(CREDIT_REMINDER_NOTIFICATION_ID)
+                        return Result.success()
+                    }
+                    markCreditRemindersNotified(db, owner, due, now)
                 }
-                markCreditRemindersNotified(db, owner, due, now)
             }
             Result.success()
         } catch (e: CancellationException) { throw e } catch (_: Exception) { Result.retry() } finally { store.close() }

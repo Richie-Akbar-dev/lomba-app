@@ -17,7 +17,7 @@ internal data class ExportCredit(val credit: CreditDetail, val items: List<SaleI
 /** Produces a private temporary PDF. Sharing grants URI read access only to the receiving app. */
 internal suspend fun makeReportPdf(context: Context, report: ReportSnapshot, shopName: String, credits: List<ExportCredit>): File = withContext(Dispatchers.IO) {
     val folder = File(context.cacheDir, "report_share").apply { mkdirs() }
-    folder.listFiles()?.filter { System.currentTimeMillis() - it.lastModified() > 24L * 60 * 60 * 1000 }?.forEach { it.delete() }
+    cleanOldReportPdfs(context)
     val file = File(folder, "Laporan-${UUID.randomUUID()}.pdf")
     val fmt = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale("id", "ID"))
     val lines = mutableListOf(

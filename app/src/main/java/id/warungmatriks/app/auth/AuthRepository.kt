@@ -21,6 +21,9 @@ import kotlinx.coroutines.tasks.await
 data class ShopProfile(val ownerName: String, val shopName: String, val businessType: String)
 data class SignedInAccount(val uid: String, val displayName: String, val email: String, val shop: ShopProfile)
 
+// Coordinates local sign-out with the credit reminder's final session check and update.
+internal val creditReminderSessionLock = Any()
+
 /** Firebase owns and persists the auth session; the app never stores Google tokens itself. */
 class AuthRepository(private val context: Context) {
     private val profiles = LocalShopProfiles(context)
@@ -71,9 +74,11 @@ class AuthRepository(private val context: Context) {
     }
 
     suspend fun signOut(activityContext: Context) {
-        auth().signOut()
-        // An already displayed generic reminder belongs to the previous session.
-        try { NotificationManagerCompat.from(context).cancel(CREDIT_REMINDER_NOTIFICATION_ID) } catch (_: Exception) { }
+        synchronized(creditReminderSessionLock) {
+            auth().signOut()
+            // An already displayed generic reminder belongs to the previous session.
+            try { NotificationManagerCompat.from(context).cancel(CREDIT_REMINDER_NOTIFICATION_ID) } catch (_: Exception) { }
+        }
         try {
             CredentialManager.create(activityContext).clearCredentialState(ClearCredentialStateRequest())
         } catch (e: CancellationException) {

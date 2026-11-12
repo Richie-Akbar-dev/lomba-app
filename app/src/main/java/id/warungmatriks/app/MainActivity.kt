@@ -7,6 +7,7 @@ import id.warungmatriks.app.ui.AuthEntry
 import id.warungmatriks.app.data.scheduleHistoryCleanup
 import id.warungmatriks.app.data.scheduleCreditReminders
 import id.warungmatriks.app.data.scheduleStockReminders
+import id.warungmatriks.app.data.scheduleReportPdfCleanup
 import id.warungmatriks.app.ui.theme.WarungMatriksTheme
 
 class MainActivity : ComponentActivity() {
@@ -15,6 +16,7 @@ class MainActivity : ComponentActivity() {
         scheduleHistoryCleanup(applicationContext)
         scheduleCreditReminders(applicationContext)
         scheduleStockReminders(applicationContext)
+        scheduleReportPdfCleanup(applicationContext)
         setContent { WarungMatriksTheme { AuthEntry() } }
     }
 }
