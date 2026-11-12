@@ -62,7 +62,7 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
         SectionGap(); GroupTitle("Manajemen toko & kasir")
         AccountMenuTile(Icons.Default.Storefront, "Profil toko", "Ubah pemilik, nama warung & jenis usaha") { editingProfile = true }
         Spacer(Modifier.height(8.dp))
-        AccountMenuTile(Icons.Default.QrCode, "QRIS toko", "Atur kode biner QRIS statis") { binary = true }
+        AccountMenuTile(Icons.Default.QrCode, "QRIS toko", "Atur kode QRIS statis") { binary = true }
         Spacer(Modifier.height(8.dp))
         AccountMenuTile(Icons.Default.NotificationsNone, "Notifikasi", "Pengingat & aktivitas toko") { onNotifications() }
         SectionGap(); GroupTitle("Data & keuangan")
@@ -146,13 +146,13 @@ private fun BinaryDialog(ownerId: String, onClose: () -> Unit, onSaved: () -> Un
     val inspection = LocalInspectionMode.current
     val settings = remember(context, ownerId) { QrisSettings(context, ownerId) }
     var hasSaved by remember(settings) { mutableStateOf(!inspection && settings.payload() != null) }
-    var input by remember(settings) { mutableStateOf(if (inspection) "" else settings.payload()?.let(::encodeBinaryQris).orEmpty()) }
+    var input by remember(settings) { mutableStateOf(if (inspection) "" else settings.payload().orEmpty()) }
     var error by remember { mutableStateOf<String?>(null) }
     var confirmReset by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
     fun updateInput(value: String) {
         if (value.length <= 24_576) { input = value; error = null }
-        else error = "Kode biner terlalu panjang."
+        else error = "Kode QRIS terlalu panjang."
     }
     Dialog(onDismissRequest = onClose) {
         Surface(color = White, shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
@@ -162,18 +162,18 @@ private fun BinaryDialog(ownerId: String, onClose: () -> Unit, onSaved: () -> Un
                         Icon(Icons.Default.QrCode, null, tint = Blue, modifier = Modifier.padding(9.dp).size(20.dp))
                     }
                     Spacer(Modifier.width(10.dp))
-                    Text("Masukkan Kode Biner", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
+                    Text("Masukkan Kode QRIS", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.weight(1f))
                     IconButton(onClick = onClose, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Close, "Tutup", tint = Muted) }
                 }
                 HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Line)
-                Text("Kode biner QRIS", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Ink)
+                Text("Kode QRIS", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Ink)
                 Spacer(Modifier.height(6.dp))
-                DemoNote("Tempel payload QRIS statis lengkap sebagai biner ASCII, 8 angka 0 atau 1 per karakter. Spasi dan baris baru boleh digunakan.")
+                DemoNote("Tempel teks QRIS statis lengkap atau biner ASCII (8 angka 0/1 per karakter). Untuk biner, spasi dan baris baru boleh digunakan.")
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(value = input, onValueChange = ::updateInput,
-                    label = { Text("Kode biner QRIS") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 220.dp), maxLines = 8,
+                    label = { Text("Kode QRIS") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 220.dp), maxLines = 8,
                     shape = RoundedCornerShape(10.dp),
-                    trailingIcon = { IconButton(onClick = { clipboard.getText()?.text?.let(::updateInput) }) { Icon(Icons.Default.ContentPaste, "Tempel kode biner") } },
+                    trailingIcon = { IconButton(onClick = { clipboard.getText()?.text?.let(::updateInput) }) { Icon(Icons.Default.ContentPaste, "Tempel kode QRIS") } },
                     colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = LightSurface, focusedContainerColor = LightSurface, unfocusedBorderColor = Line))
                 if (error != null) { Spacer(Modifier.height(8.dp)); Text(error!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -184,7 +184,7 @@ private fun BinaryDialog(ownerId: String, onClose: () -> Unit, onSaved: () -> Un
                 Spacer(Modifier.height(12.dp))
                 Button(enabled = input.isNotBlank(), modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(10.dp), onClick = {
                     try {
-                        if (settings.saveBinary(input)) onSaved() else error = "Kode belum dapat disimpan. Coba lagi."
+                        if (settings.saveQrisInput(input)) onSaved() else error = "Kode belum dapat disimpan. Coba lagi."
                     } catch (e: IllegalArgumentException) { error = e.message ?: "Kode tidak sesuai format QRIS." } catch (_: Exception) { error = "Kode belum dapat disimpan. Coba lagi." }
                 }) { Text("Periksa format & simpan", fontWeight = FontWeight.Bold) }
             }

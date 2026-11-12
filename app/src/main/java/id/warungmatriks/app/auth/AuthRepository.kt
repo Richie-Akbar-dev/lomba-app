@@ -1,6 +1,7 @@
 package id.warungmatriks.app.auth
 
 import android.content.Context
+import androidx.core.app.NotificationManagerCompat
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
@@ -13,6 +14,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
 import id.warungmatriks.app.BuildConfig
+import id.warungmatriks.app.data.CREDIT_REMINDER_NOTIFICATION_ID
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.tasks.await
 
@@ -70,6 +72,8 @@ class AuthRepository(private val context: Context) {
 
     suspend fun signOut(activityContext: Context) {
         auth().signOut()
+        // An already displayed generic reminder belongs to the previous session.
+        try { NotificationManagerCompat.from(context).cancel(CREDIT_REMINDER_NOTIFICATION_ID) } catch (_: Exception) { }
         try {
             CredentialManager.create(activityContext).clearCredentialState(ClearCredentialStateRequest())
         } catch (e: CancellationException) {

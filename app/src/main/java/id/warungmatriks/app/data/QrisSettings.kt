@@ -10,8 +10,8 @@ internal class QrisSettings(context: Context, private val ownerId: String, name:
 
     fun payload(): String? = preferences.getString(key, null)
 
-    fun saveBinary(input: String): Boolean {
-        val payload = decodeBinaryQris(input) // Validate before replacing an existing configuration.
+    fun saveQrisInput(input: String): Boolean {
+        val payload = decodeQrisInput(input) // Validate before replacing an existing configuration.
         return preferences.edit().putString(key, payload).commit()
     }
 

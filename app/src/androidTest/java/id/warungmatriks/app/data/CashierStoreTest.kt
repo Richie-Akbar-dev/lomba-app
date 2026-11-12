@@ -120,6 +120,25 @@ class CashierStoreTest {
         } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
     }
 
+    @Test fun dueCreditRemindersAreScopedToOneAccount() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "credit-reminder-" + UUID.randomUUID() + ".db"
+        val a = CashierStore(context, "owner-a", dbName)
+        val b = CashierStore(context, "owner-b", dbName)
+        try {
+            val item = Product("item", "Barang", 5000, 3000, 3)
+            a.saveProduct(item); b.saveProduct(item)
+            a.checkoutCredit("credit-a", listOf(CashierLine(item, 1)), 0, "A", "08123456789", 1000L, true)
+            b.checkoutCredit("credit-b", listOf(CashierLine(item, 1)), 0, "B", "08123456789", 1000L, true)
+            val db = a.writableDatabase
+            assertEquals(listOf("credit-a"), dueCreditReminderIds(db, "owner-a", 2000L))
+            assertEquals(listOf("credit-b"), dueCreditReminderIds(db, "owner-b", 2000L))
+            markCreditRemindersNotified(db, "owner-a", listOf("credit-a", "credit-b"), 2000L)
+            assertTrue(dueCreditReminderIds(db, "owner-a", 2000L).isEmpty())
+            assertEquals(listOf("credit-b"), dueCreditReminderIds(db, "owner-b", 2000L))
+        } finally { a.close(); b.close(); context.deleteDatabase(dbName) }
+    }
+
     @Test fun partialPaymentSavesDebtAndDeduplicatesRetry() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val store = CashierStore(context, "test-" + UUID.randomUUID())

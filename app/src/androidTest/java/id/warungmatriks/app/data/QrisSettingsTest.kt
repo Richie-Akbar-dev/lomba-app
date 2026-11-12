@@ -18,10 +18,15 @@ class QrisSettingsTest {
         val body = "00020101021126180014ID.CO.QRIS.WWW5204000053033605802ID5904DEMO6007JAKARTA6304"
         val payload = body + QrisPayload.crc16(body)
         try {
-            assertTrue(a.saveBinary(encodeBinaryQris(payload)))
+            assertTrue(a.saveQrisInput(encodeBinaryQris(payload)))
             assertEquals(payload, QrisSettings(context, "owner-a", name).payload())
             assertNull(b.payload())
-            try { a.saveBinary("01001101"); fail("Invalid QRIS must be rejected") } catch (_: IllegalArgumentException) { }
+            assertTrue(b.saveQrisInput(payload))
+            assertEquals(payload, b.payload())
+            try { b.saveQrisInput(payload.dropLast(4) + "0000"); fail("Invalid CRC must be rejected") } catch (_: IllegalArgumentException) { }
+            assertEquals(payload, b.payload())
+            assertTrue(b.clear())
+            try { a.saveQrisInput("01001101"); fail("Invalid QRIS must be rejected") } catch (_: IllegalArgumentException) { }
             assertEquals(payload, a.payload())
             assertTrue(a.clear()); assertNull(a.payload()); assertNull(b.payload())
         } finally { context.getSharedPreferences(name, Context.MODE_PRIVATE).edit().clear().commit() }

@@ -14,6 +14,14 @@ class BinaryQrisTest {
         assertEquals(payload, decodeBinaryQris(bits.replace(" ", "\n")))
         assertEquals(payload, decodeBinaryQris(bits.replace(" ", "")))
     }
+    @Test fun acceptsFullTextPayloadOrBinary() {
+        val payload = sample()
+        assertEquals(payload, decodeQrisInput(payload))
+        assertEquals(payload, decodeQrisInput("  $payload\n"))
+        assertEquals(payload, decodeQrisInput(encodeBinaryQris(payload)))
+    }
+    @Test(expected = IllegalArgumentException::class) fun rejectsInvalidTextPayload() { decodeQrisInput("QRIS ABC123") }
+    @Test(expected = IllegalArgumentException::class) fun rejectsTextWithWrongCrc() { decodeQrisInput(sample().dropLast(4) + "0000") }
     @Test(expected = IllegalArgumentException::class) fun rejectsOtherCharacters() { decodeBinaryQris("0100x000") }
     @Test(expected = IllegalArgumentException::class) fun rejectsIncompleteByte() { decodeBinaryQris("0101010") }
     @Test(expected = IllegalArgumentException::class) fun rejectsNonAsciiByte() { decodeBinaryQris("11111111") }

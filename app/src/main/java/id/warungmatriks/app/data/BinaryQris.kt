@@ -17,3 +17,15 @@ internal fun decodeBinaryQris(input: String): String {
 
 internal fun encodeBinaryQris(payload: String): String =
     payload.map { it.code.toString(2).padStart(8, '0') }.joinToString(" ")
+
+/** Accept either the full printable QRIS payload or its eight-bit binary representation. */
+internal fun decodeQrisInput(input: String): String {
+    require(input.length <= 24_576) { "Kode QRIS terlalu panjang." }
+    val trimmed = input.trim()
+    require(trimmed.isNotEmpty()) { "Masukkan kode QRIS." }
+    if (trimmed.all { it == '0' || it == '1' || it.isWhitespace() }) return decodeBinaryQris(trimmed)
+    require(trimmed.length <= 2048) { "Payload QRIS terlalu panjang." }
+    // Only a complete static QRIS payload with valid CRC is accepted; arbitrary text is not.
+    QrisPayload.withAmount(trimmed, 1)
+    return trimmed
+}
