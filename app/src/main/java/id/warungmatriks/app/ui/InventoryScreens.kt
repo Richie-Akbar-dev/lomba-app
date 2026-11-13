@@ -182,11 +182,13 @@ internal fun InventoryScreen(ownerId: String, onAdd: () -> Unit, onEdit: (String
 @Composable
 private fun AddStockDialog(product: Product, store: CashierStore, onClose: () -> Unit, onSaved: (Int) -> Unit) {
     var quantity by rememberSaveable(product.id) { mutableStateOf("") }
+    var cashPaidText by rememberSaveable(product.id) { mutableStateOf("") }
     val adjustmentId = rememberSaveable(product.id) { UUID.randomUUID().toString() }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val amount = quantity.toIntOrNull()
+    val cashPaid = cashPaidText.toIntOrNull()
     AlertDialog(
         onDismissRequest = { if (!busy) onClose() },
         title = { Text("Tambah stok") },
@@ -200,14 +202,20 @@ private fun AddStockDialog(product: Product, store: CashierStore, onClose: () ->
                 label = { Text("Stok tambahan", fontSize = 13.sp) },
                 suffix = { Text("pcs", fontSize = 12.sp) }, modifier = Modifier.fillMaxWidth(),
                 singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), enabled = !busy)
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(value = cashPaidText, onValueChange = { cashPaidText = it.filter { c -> c in '0'..'9' }.take(9); error = null },
+                label = { Text("Total tunai untuk kulakan (Rp)", fontSize = 13.sp) }, modifier = Modifier.fillMaxWidth(),
+                singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), enabled = !busy)
+            Text("Isi 0 jika tidak ada uang tunai yang keluar.", fontSize = 12.sp, color = Muted)
             error?.let { Spacer(Modifier.height(8.dp)); Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
         } },
-        confirmButton = { TextButton(enabled = !busy && amount != null && amount > 0, onClick = {
+        confirmButton = { TextButton(enabled = !busy && amount != null && amount > 0 && cashPaid != null, onClick = {
             val add = amount ?: return@TextButton
+            val paid = cashPaid ?: return@TextButton
             busy = true; error = null
             scope.launch {
                 try {
-                    val after = withContext(NonCancellable) { store.addStock(adjustmentId, product.id, add) }
+                    val after = withContext(NonCancellable) { store.addStock(adjustmentId, product.id, add, paid) }
                     onSaved(after)
                 } catch (e: CancellationException) { throw e } catch (_: StockAdditionException) { error = "Barang tidak ditemukan atau stok melebihi batas yang didukung." } catch (_: Exception) { error = "Stok belum dapat disimpan. Coba lagi." } finally { busy = false }
             }

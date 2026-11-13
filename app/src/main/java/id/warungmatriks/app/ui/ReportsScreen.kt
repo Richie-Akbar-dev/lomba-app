@@ -3,6 +3,7 @@ package id.warungmatriks.app.ui
 import android.content.ClipData
 import android.content.Intent
 import android.content.ActivityNotFoundException
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -35,7 +36,7 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-internal fun ReportsScreen(ownerId: String, shopName: String) {
+internal fun ReportsScreen(ownerId: String, shopName: String, openExport: Boolean = false, onExportRequestHandled: () -> Unit = {}) {
     val context = LocalContext.current
     val inspection = LocalInspectionMode.current
     val store = remember(context, ownerId) { CashierStore(context, ownerId) }
@@ -67,6 +68,9 @@ internal fun ReportsScreen(ownerId: String, shopName: String) {
     LaunchedEffect(store, revision, inspection) {
         if (!inspection) try { report = store.report() } catch (e: CancellationException) { throw e } catch (_: Exception) { error = "Laporan belum dapat dimuat." }
     }
+    LaunchedEffect(openExport) {
+        if (openExport) { if (!inspection) actions = true; onExportRequestHandled() }
+    }
     fun export(share: Boolean) {
         if (busy) return
         actions = false; busy = true
@@ -90,6 +94,9 @@ internal fun ReportsScreen(ownerId: String, shopName: String) {
                     try { sendTo("com.whatsapp") } catch (_: ActivityNotFoundException) { sendTo("com.whatsapp.w4b") }
                     // The recipient reads asynchronously; keep the cache file until later cleanup.
                     file = null
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    val savedName = saveReportToDownloads(context, file)
+                    error = "PDF tersimpan di Download/Warung Matriks: $savedName"
                 } else {
                     pendingPath = file.absolutePath
                     download.launch("Laporan-Warung-${SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())}.pdf")

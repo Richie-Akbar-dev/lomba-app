@@ -28,7 +28,7 @@ import id.warungmatriks.app.auth.SignedInAccount
 import id.warungmatriks.app.data.QrisSettings
 
 @Composable
-internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, signOutBusy: Boolean, signOutError: String?, onNotifications: () -> Unit, onSaveProfile: (ShopProfile) -> Boolean = { false }) {
+internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, signOutBusy: Boolean, signOutError: String?, onNotifications: () -> Unit, onSaveProfile: (ShopProfile) -> Boolean = { false }, onExportReport: () -> Unit = {}) {
     val context = LocalContext.current
     var info by remember { mutableStateOf<String?>(null) }
     var binary by remember { mutableStateOf(false) }
@@ -60,13 +60,12 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
         SectionGap(); GroupTitle("Data & keuangan")
         AccountMenuTile(Icons.Default.CloudOff, "Cadangkan & pulihkan", "Backup belum tersedia") { info = "Backup dan sinkronisasi belum tersedia." }
         Spacer(Modifier.height(8.dp))
-        AccountMenuTile(Icons.Default.FileDownload, "Ekspor laporan", "PDF melalui halaman Laporan") { info = "Buka halaman Laporan untuk mengunduh atau membagikan PDF." }
+        AccountMenuTile(Icons.Default.FileDownload, "Ekspor laporan", "Unduh atau bagikan PDF") { onExportReport() }
         SectionGap(); GroupTitle("Bantuan & keamanan")
-        AccountMenuTile(Icons.Default.SupportAgent, "Pusat bantuan", "Hubungi melalui email") {
-            val intent = Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", "richieakbar248@gmail.com", null))
-                .putExtra(Intent.EXTRA_SUBJECT, "Bantuan Warung Matriks")
+        AccountMenuTile(Icons.Default.SupportAgent, "Pusat bantuan", "Hubungi 0812 3580 6240") {
+            val intent = Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", "081235806240", null))
             try { context.startActivity(intent) } catch (_: Exception) {
-                info = "Aplikasi email tidak dapat dibuka. Hubungi richieakbar248@gmail.com."
+                info = "Aplikasi telepon tidak dapat dibuka. Hubungi 0812 3580 6240."
             }
         }
         Spacer(Modifier.height(16.dp))

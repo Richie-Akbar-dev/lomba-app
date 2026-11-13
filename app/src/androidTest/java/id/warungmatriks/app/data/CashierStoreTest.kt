@@ -385,6 +385,27 @@ class CashierStoreTest {
         } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
     }
 
+    @Test fun stockPurchaseRecordsCashOnceAndRollsBackTogether() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "stock-purchase-" + UUID.randomUUID() + ".db"
+        val owner = CashierStore(context, "owner", dbName)
+        val other = CashierStore(context, "other", dbName)
+        try {
+            val item = Product("item", "Barang", 5000, 3000, 3)
+            owner.saveProduct(item); other.saveProduct(item)
+            assertEquals(5, owner.addStock("purchase", item.id, 2, 7000))
+            assertEquals(5, owner.addStock("purchase", item.id, 2, 7000))
+            try { owner.addStock("purchase", item.id, 2, 6000); fail("Retry amount differs") } catch (_: IllegalArgumentException) { }
+            assertEquals(7000L, owner.cashSummary(CashWeek(0, System.currentTimeMillis() + 60000)).cashOut)
+            assertEquals(0L, other.cashSummary(CashWeek(0, System.currentTimeMillis() + 60000)).cashOut)
+            assertEquals(6, owner.addStock("free", item.id, 1, 0))
+            owner.writableDatabase.execSQL("CREATE TRIGGER fail_stock_cash BEFORE INSERT ON cash_movements WHEN NEW.direction='out' BEGIN SELECT RAISE(ABORT, 'test failure'); END")
+            try { owner.addStock("fail", item.id, 1, 500); fail("Cash error must roll back stock") } catch (_: android.database.sqlite.SQLiteException) { }
+            assertEquals(6, owner.stocks().getValue(item.id))
+            assertEquals(7000L, owner.cashSummary(CashWeek(0, System.currentTimeMillis() + 60000)).cashOut)
+        } finally { owner.close(); other.close(); context.deleteDatabase(dbName) }
+    }
+
     @Test fun stockAdditionRejectsInvalidAndOverflowWithoutPartialWrites() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val dbName = "add-stock-limit-" + UUID.randomUUID() + ".db"

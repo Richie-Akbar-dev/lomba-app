@@ -35,6 +35,7 @@ internal fun WarungMatriksApp(account: SignedInAccount, onSignOut: () -> Unit, s
     val cashierState = remember { CashierState() }
     var pendingCredit by remember(account.uid) { mutableStateOf<PendingCredit?>(null) }
     var editingProductId by rememberSaveable(account.uid) { mutableStateOf<String?>(null) }
+    var requestReportExport by rememberSaveable(account.uid) { mutableStateOf(false) }
     fun navigate(next: Screen) { if (screen != next) { backStack.add(screen); screen = next } }
     fun back() { if (screen == Screen.KASBON) pendingCredit = null; screen = if (backStack.isNotEmpty()) backStack.removeAt(backStack.lastIndex) else Screen.KASIR }
     BackHandler(enabled = screen !in mainScreens) { back() }
@@ -55,8 +56,8 @@ internal fun WarungMatriksApp(account: SignedInAccount, onSignOut: () -> Unit, s
                 Screen.KASIR -> CashierScreen(cashierState, ownerId = account.uid, cashierName = account.shop.ownerName, shopName = account.shop.shopName, onNotifications = { navigate(Screen.NOTIFIKASI) }, onAccount = { navigate(Screen.AKUN) }, onCash = { navigate(Screen.KAS) }, onCredit = { pendingCredit = null; navigate(Screen.KASBON) }, onCreditCheckout = { pendingCredit = it; navigate(Screen.KASBON) })
                 Screen.PESANAN -> OrdersScreen(ownerId = account.uid, shopName = account.shop.shopName, onNotifications = { navigate(Screen.NOTIFIKASI) }, onAccount = { navigate(Screen.AKUN) })
                 Screen.BARANG -> InventoryScreen(ownerId = account.uid, onAdd = { editingProductId = null; navigate(Screen.TAMBAH) }, onEdit = { editingProductId = it; navigate(Screen.TAMBAH) }, shopName = account.shop.shopName, onNotifications = { navigate(Screen.NOTIFIKASI) }, onAccount = { navigate(Screen.AKUN) })
-                Screen.LAPORAN -> ReportsScreen(ownerId = account.uid, shopName = account.shop.shopName)
-                Screen.AKUN -> AccountScreen(account = account, onSignOut = onSignOut, signOutBusy = signOutBusy, signOutError = signOutError, onNotifications = { navigate(Screen.NOTIFIKASI) }, onSaveProfile = onSaveProfile)
+                Screen.LAPORAN -> ReportsScreen(ownerId = account.uid, shopName = account.shop.shopName, openExport = requestReportExport, onExportRequestHandled = { requestReportExport = false })
+                Screen.AKUN -> AccountScreen(account = account, onSignOut = onSignOut, signOutBusy = signOutBusy, signOutError = signOutError, onNotifications = { navigate(Screen.NOTIFIKASI) }, onSaveProfile = onSaveProfile, onExportReport = { requestReportExport = true; navigate(Screen.LAPORAN) })
                 Screen.NOTIFIKASI -> NotificationsScreen(ownerId = account.uid, onBack = { back() })
                 Screen.KAS -> CashLedgerScreen(ownerId = account.uid, onBack = { back() })
                 Screen.KASBON -> CreditScreen(ownerId = account.uid, pending = pendingCredit, onBack = { back() }, onSaved = { result ->

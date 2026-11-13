@@ -171,15 +171,18 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         } finally { update.close() }
     }
 
-    /** Add stock atomically and idempotently; this is not a purchase or cash expense. */
-    suspend fun addStock(id: String, productId: String, quantity: Int): Int = withContext(Dispatchers.IO) {
-        require(id.isNotBlank() && productId.isNotBlank() && quantity > 0)
+    /** Stock and any actual cash paid are committed together and are idempotent per adjustment. */
+    suspend fun addStock(id: String, productId: String, quantity: Int, cashPaid: Int = 0): Int = withContext(Dispatchers.IO) {
+        require(ownerId.isNotBlank() && id.isNotBlank() && productId.isNotBlank() && quantity > 0 && cashPaid >= 0)
+        val cashId = "stock-add:$ownerId:$id"
         val db = writableDatabase
         db.beginTransaction()
         try {
             db.rawQuery("SELECT product_id,quantity,after_quantity FROM stock_additions WHERE owner_id=? AND id=?", arrayOf(ownerId, id)).use { c ->
                 if (c.moveToFirst()) {
                     require(c.getString(0) == productId && c.getInt(1) == quantity) { "ID penyesuaian sudah dipakai." }
+                    val previousCash = db.rawQuery("SELECT amount FROM cash_movements WHERE sale_id=? AND owner_id=? AND direction='out' AND category='purchase'", arrayOf(cashId, ownerId)).use { payment -> if (payment.moveToFirst()) payment.getInt(0) else 0 }
+                    require(previousCash == cashPaid) { "Nominal kulakan berbeda dari penyesuaian sebelumnya." }
                     val previousResult = c.getInt(2)
                     db.setTransactionSuccessful()
                     return@withContext previousResult
@@ -194,7 +197,12 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
             val after = db.rawQuery("SELECT quantity FROM stock WHERE owner_id=? AND product_id=?", arrayOf(ownerId, productId)).use { c ->
                 check(c.moveToFirst()); c.getInt(0)
             }
-            db.execSQL("INSERT INTO stock_additions(owner_id,id,product_id,quantity,before_quantity,after_quantity,created_at) VALUES(?,?,?,?,?,?,?)", arrayOf(ownerId,id,productId,quantity,after-quantity,after,System.currentTimeMillis()))
+            val now = System.currentTimeMillis()
+            db.execSQL("INSERT INTO stock_additions(owner_id,id,product_id,quantity,before_quantity,after_quantity,created_at) VALUES(?,?,?,?,?,?,?)", arrayOf(ownerId,id,productId,quantity,after-quantity,after,now))
+            if (cashPaid > 0) {
+                val productName = db.rawQuery("SELECT name FROM products WHERE owner_id=? AND product_id=?", arrayOf(ownerId, productId)).use { c -> check(c.moveToFirst()); c.getString(0) }
+                db.execSQL("INSERT INTO cash_movements(sale_id,owner_id,amount,created_at,direction,category,note) VALUES(?,?,?,?,'out','purchase',?)", arrayOf(cashId, ownerId, cashPaid, now, "Tambah stok: $productName"))
+            }
             db.setTransactionSuccessful()
             after
         } finally { db.endTransaction() }
