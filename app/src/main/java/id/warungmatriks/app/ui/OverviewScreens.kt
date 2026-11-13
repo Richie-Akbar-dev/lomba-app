@@ -23,6 +23,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import id.warungmatriks.app.ui.theme.*
 import id.warungmatriks.app.data.CashierStore
 import id.warungmatriks.app.data.DemoData
@@ -36,7 +37,7 @@ import id.warungmatriks.app.data.scheduleStockReminders
 import kotlinx.coroutines.CancellationException
 
 @Composable
-internal fun NotificationsScreen(ownerId: String, onBack: () -> Unit, onCredit: () -> Unit) {
+internal fun NotificationsScreen(ownerId: String, onBack: () -> Unit) {
     val context = LocalContext.current
     val inspection = LocalInspectionMode.current
     val store = remember(context, ownerId) { CashierStore(context, ownerId) }
@@ -57,13 +58,13 @@ internal fun NotificationsScreen(ownerId: String, onBack: () -> Unit, onCredit: 
         }
         catch (e: CancellationException) { throw e } catch (_: Exception) { error = "Peringatan stok belum dapat dimuat." } finally { loading = false }
     }
-    DemoPage("Notifikasi", "Pengingat stok dan kasbon lokal", onBack, badgeText = if (inspection) "PREVIEW" else "DATA LOKAL") {
-        GroupTitle("Pengingat toko", "Stok barang aktif yang sama dengan atau di bawah batas minimum")
+    DemoPage("Notifikasi", subtitle = "", onBack = onBack, badgeText = "") {
+        GroupTitle("Notifikasi toko")
         DemoCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(color = PaleBlue, shape = RoundedCornerShape(10.dp)) { Icon(Icons.Default.NotificationsNone, null, tint = Blue, modifier = Modifier.padding(9.dp).size(20.dp)) }
                 Spacer(Modifier.width(10.dp))
-                Column(Modifier.weight(1f)) { Text("Notifikasi stok perangkat", fontWeight = FontWeight.Bold, fontSize = 14.sp); Text("Pengingat lokal untuk akun ini", fontSize = 12.sp, color = Muted) }
+                Column(Modifier.weight(1f)) { Text("Izin notifikasi", fontWeight = FontWeight.Bold, fontSize = 14.sp); Text("Pengingat stok", fontSize = 12.sp, color = Muted) }
                 Switch(checked = stockAlerts, onCheckedChange = { enabled ->
                     stockAlerts = enabled
                     if (!inspection) {
@@ -75,7 +76,6 @@ internal fun NotificationsScreen(ownerId: String, onBack: () -> Unit, onCredit: 
                     }
                 })
             }
-            DemoNote("Notifikasi sistem memerlukan izin dan dapat terlambat. Peringatan di halaman ini tetap tersedia.")
             TextButton(onClick = {
                 try {
                     val intent = if (Build.VERSION.SDK_INT >= 26) Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
@@ -92,11 +92,11 @@ internal fun NotificationsScreen(ownerId: String, onBack: () -> Unit, onCredit: 
         if (filter != "Kasbon") {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Peringatan stok", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                TextButton(onClick = { revision++ }) { Text("Muat ulang") }
+                IconButton(onClick = { revision++ }) { Icon(Icons.Default.Refresh, contentDescription = "Muat ulang notifikasi", tint = Blue) }
             }
             if (loading) DemoNote("Memuat stok...")
             else if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-            else if (items.isEmpty()) DemoCard { DemoNote("Tidak ada barang yang mencapai batas stok minimum.") }
+            else if (items.isEmpty()) DemoCard { Text("Belum ada barang yang melewati stok", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontSize = 12.sp, color = Muted, lineHeight = 17.sp) }
             else items.forEach { product ->
                 NotificationCard(if (product.stock == 0) "STOK HABIS" else "STOK MENIPIS", product.name, "Sisa ${product.stock} pcs • batas minimum ${product.minimumStock} pcs.", Icons.Default.Inventory2, attention = true)
                 Spacer(Modifier.height(10.dp))
@@ -106,14 +106,12 @@ internal fun NotificationsScreen(ownerId: String, onBack: () -> Unit, onCredit: 
             Spacer(Modifier.height(8.dp)); Text("Kasbon jatuh tempo", fontWeight = FontWeight.Bold)
             if (loading) DemoNote("Memuat pengingat...")
             else if (error != null) Text("Pengingat belum dapat dimuat.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-            else if (dueCredits.isEmpty()) DemoCard { DemoNote("Tidak ada pengingat kasbon yang jatuh tempo.") }
+            else if (dueCredits.isEmpty()) DemoCard { DemoNote("Belum ada kasbon jatuh tempo") }
             dueCredits.forEach { credit ->
                 NotificationCard("KASBON JATUH TEMPO", credit.customer, "Sisa ${rupiah(credit.remaining)}", Icons.Default.NotificationsNone)
                 Spacer(Modifier.height(10.dp))
             }
-            TextButton(onClick = onCredit) { Text("Buka buku kasbon →") }
         }
-        Spacer(Modifier.height(12.dp)); DemoNote("Pengingat kasbon muncul saat atau setelah jatuh tempo jika diaktifkan pada kasbon. Android dapat menunda pekerjaan latar belakang; izin notifikasi diperlukan.")
     }
 }
 
@@ -129,4 +127,4 @@ private fun NotificationCard(type: String, title: String, detail: String, icon: 
 }
 
 @Preview(showBackground = true, widthDp = 360, heightDp = 800)
-@Composable private fun NotificationsPreview() { WarungMatriksTheme { NotificationsScreen("preview", {}, {}) } }
+@Composable private fun NotificationsPreview() { WarungMatriksTheme { NotificationsScreen("preview", {}) } }

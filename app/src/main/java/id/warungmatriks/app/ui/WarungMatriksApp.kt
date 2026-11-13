@@ -57,7 +57,7 @@ internal fun WarungMatriksApp(account: SignedInAccount, onSignOut: () -> Unit, s
                 Screen.BARANG -> InventoryScreen(ownerId = account.uid, onAdd = { editingProductId = null; navigate(Screen.TAMBAH) }, onEdit = { editingProductId = it; navigate(Screen.TAMBAH) }, shopName = account.shop.shopName, onNotifications = { navigate(Screen.NOTIFIKASI) }, onAccount = { navigate(Screen.AKUN) })
                 Screen.LAPORAN -> ReportsScreen(ownerId = account.uid, shopName = account.shop.shopName)
                 Screen.AKUN -> AccountScreen(account = account, onSignOut = onSignOut, signOutBusy = signOutBusy, signOutError = signOutError, onNotifications = { navigate(Screen.NOTIFIKASI) }, onSaveProfile = onSaveProfile)
-                Screen.NOTIFIKASI -> NotificationsScreen(ownerId = account.uid, onBack = { back() }, onCredit = { navigate(Screen.KASBON) })
+                Screen.NOTIFIKASI -> NotificationsScreen(ownerId = account.uid, onBack = { back() })
                 Screen.KAS -> CashLedgerScreen(ownerId = account.uid, onBack = { back() })
                 Screen.KASBON -> CreditScreen(ownerId = account.uid, pending = pendingCredit, onBack = { back() }, onSaved = { result ->
                     cashierState.quantities.clear(); cashierState.cashText = ""; cashierState.customer = ""
