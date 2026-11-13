@@ -148,7 +148,7 @@ private fun AuthLayout(title: String, subtitle: String, content: @Composable Col
 
 @Composable
 internal fun GoogleLoginScreen(configured: Boolean, busy: Boolean, error: String?, onSignIn: () -> Unit) {
-    AuthLayout("Selamat Datang", "Masuk atau daftar dengan akun Google untuk mulai menggunakan Warung Matriks.") {
+    AuthLayout("Selamat Datang", "Silakan masuk\nmenggunakan akun Google untuk memulai") {
         if (!configured) {
             Surface(color = LightSurface, shape = RoundedCornerShape(10.dp)) {
                 Text("Google Sign-In belum dikonfigurasi. Ikuti langkah konfigurasi pada README sebelum masuk.", Modifier.padding(12.dp), color = Ink, fontSize = 12.sp, lineHeight = 17.sp)
@@ -162,7 +162,7 @@ internal fun GoogleLoginScreen(configured: Boolean, busy: Boolean, error: String
         }
         error?.let { Spacer(Modifier.height(12.dp)); Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.error, lineHeight = 17.sp) }
         Spacer(Modifier.height(18.dp))
-        Text("Masuk pertama memerlukan internet. Setelah masuk, aplikasi dapat dibuka kembali secara offline pada perangkat ini.", fontSize = 12.sp, color = Muted, lineHeight = 18.sp)
+        Text("Masuk pertama memerlukan internet. Setelah masuk, aplikasi dapat dibuka kembali secara offline pada perangkat ini.", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontSize = 12.sp, color = Muted, lineHeight = 18.sp)
     }
 }
 
