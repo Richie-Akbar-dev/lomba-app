@@ -52,6 +52,8 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 import id.warungmatriks.app.ui.theme.*
 
+internal fun transactionDebtLine(debt: Int): String = if (debt > 0) "\nSisa kasbon: ${rupiah(debt)}" else ""
+
 // Catalog, sales and outstanding debts are stored locally for this account.
 internal class CashierState {
     val quantities = mutableStateMapOf<String, Int>()
@@ -298,11 +300,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
         AlertDialog(
             onDismissRequest = { if (!state.processing) state.showCheckout = false },
             title = { Text(if (debt > 0) "Bayar & catat kasbon" else "Konfirmasi tunai") },
-            text = { Column {
-                Text("Total: ${rupiah(total)}\nTunai diterima: ${rupiah(cash)}\nKembalian: ${rupiah((cash - total).coerceAtLeast(0))}\nSisa kasbon: ${rupiah(debt)}")
-                Spacer(Modifier.height(8.dp))
-                DemoNote("Transaksi disimpan di perangkat, termasuk kas tunai dan riwayat Pesanan.")
-            } },
+            text = { Text("Total: ${rupiah(total)}\nTunai diterima: ${rupiah(cash)}\nKembalian: ${rupiah((cash - total).coerceAtLeast(0))}" + transactionDebtLine(debt)) },
             confirmButton = { TextButton(enabled = !state.processing && (debt == 0 || state.customer.isNotBlank()), onClick = {
                 val lines = items.map { CashierLine(it, quantities[it.id] ?: 0) }
                 val submittedCash = cash
@@ -345,7 +343,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
         AlertDialog(
             onDismissRequest = { state.receipt = null },
             title = { Text("Tersimpan di perangkat") },
-            text = { Text("Total: ${rupiah(result.total)}\nTunai diterima: ${rupiah(result.received)}\nKembalian: ${rupiah(result.change)}\nSisa kasbon: ${rupiah(result.debt)}" + (result.customer?.let { "\nPelanggan: $it" } ?: "") + "\n\nRiwayat tersedia di Pesanan, dan kas tunai tercatat secara lokal.") },
+            text = { Text("Total: ${rupiah(result.total)}\nTunai diterima: ${rupiah(result.received)}\nKembalian: ${rupiah(result.change)}" + transactionDebtLine(result.debt) + (result.customer?.let { "\nPelanggan: $it" } ?: "") + "\n\nRiwayat tersedia di Pesanan, dan kas tunai tercatat secara lokal.") },
             confirmButton = { TextButton(onClick = { state.receipt = null }) { Text("Selesai") } },
         )
     }
