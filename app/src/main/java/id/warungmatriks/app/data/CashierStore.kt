@@ -257,6 +257,16 @@ internal class CashierStore(context: Context, private val ownerId: String, datab
         result
     }
 
+    /** Installments for one sale, restricted to the signed-in account. */
+    suspend fun creditPayments(saleId: String): List<CreditPayment> = withContext(Dispatchers.IO) {
+        require(ownerId.isNotBlank() && saleId.isNotBlank())
+        val result = mutableListOf<CreditPayment>()
+        readableDatabase.rawQuery("SELECT amount,created_at FROM credit_payments WHERE owner_id=? AND sale_id=? ORDER BY created_at,id", arrayOf(ownerId, saleId)).use { c ->
+            while (c.moveToNext()) result.add(CreditPayment(c.getInt(0), c.getLong(1)))
+        }
+        result
+    }
+
     /** Idempotent payment and cash entry commit together. A completed credit leaves the active list. */
     suspend fun payCredit(paymentId: String, saleId: String, amount: Int): Int = withContext(Dispatchers.IO) {
         require(paymentId.isNotBlank() && amount > 0)

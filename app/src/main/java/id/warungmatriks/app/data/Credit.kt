@@ -3,6 +3,7 @@ package id.warungmatriks.app.data
 import java.util.Calendar
 
 internal data class CreditDetail(val saleId: String, val customer: String, val remaining: Int, val phone: String?, val dueAt: Long?, val remind: Boolean, val total: Int, val received: Int, val createdAt: Long)
+internal data class CreditPayment(val amount: Int, val createdAt: Long)
 
 /** Indonesian local numbers and international numbers in E.164-like format, without '+'. */
 internal fun normalizeWhatsapp(input: String): String? {

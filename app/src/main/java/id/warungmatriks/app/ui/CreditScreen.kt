@@ -41,6 +41,7 @@ internal data class PendingCredit(val id: String, val lines: List<CashierLine>, 
     val total: Int get() = lines.sumOf { it.product.price.toLong() * it.quantity }.toInt()
 }
 private fun dateText(time: Long): String = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale("id", "ID")).format(Date(time))
+internal fun creditDueDateText(time: Long?): String = time?.let { SimpleDateFormat("dd MMM yyyy", Locale("id", "ID")).format(Date(it)) } ?: "-"
 
 @Composable
 internal fun CreditScreen(ownerId: String, pending: PendingCredit?, onBack: () -> Unit, onSaved: (CheckoutResult) -> Unit) {
@@ -56,15 +57,21 @@ internal fun CreditScreen(ownerId: String, pending: PendingCredit?, onBack: () -
     var error by remember { mutableStateOf<String?>(null) }
     var credits by remember { mutableStateOf(if (inspection) listOf(CreditDetail("preview", "Pelanggan Contoh", 19500, null, null, false, 29500, 10000, 0)) else emptyList()) }
     var creditItems by remember { mutableStateOf(if (inspection) mapOf("preview" to listOf(SaleItemSnapshot("Barang contoh", 1, 29500, null))) else emptyMap()) }
+    var creditPayments by remember { mutableStateOf<Map<String, List<CreditPayment>>>(emptyMap()) }
     var revision by remember { mutableIntStateOf(0) }
     var selected by remember { mutableStateOf<CreditDetail?>(null) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
     BackHandler(enabled = busy) { }
     LaunchedEffect(store, revision, inspection) {
         if (inspection) return@LaunchedEffect
-        try { val loaded = store.creditDetails(); credits = loaded; creditItems = loaded.associate { it.saleId to store.saleItemSnapshots(it.saleId) } } catch (e: CancellationException) { throw e } catch (_: Exception) { error = "Kasbon belum dapat dimuat." }
+        try {
+            val loaded = store.creditDetails()
+            val items = loaded.associate { it.saleId to store.saleItemSnapshots(it.saleId) }
+            val payments = loaded.associate { it.saleId to store.creditPayments(it.saleId) }
+            credits = loaded; creditItems = items; creditPayments = payments
+        } catch (e: CancellationException) { throw e } catch (_: Exception) { error = "Kasbon belum dapat dimuat." }
     }
-    DemoPage("Kasbon Pelanggan", if (pending != null) "Lengkapi data pelanggan" else "Kasbon belum lunas", onBack = { if (!busy) onBack() }, badgeText = if (inspection) "PREVIEW" else "DATA LOKAL") {
+    DemoPage("Kasbon Pelanggan", if (pending != null) "Lengkapi data pelanggan" else "", onBack = { if (!busy) onBack() }, badgeText = "") {
         if (pending != null) {
             DemoCard {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -136,18 +143,12 @@ internal fun CreditScreen(ownerId: String, pending: PendingCredit?, onBack: () -
                     Text("TOTAL KASBON BELUM LUNAS", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Muted)
                     Spacer(Modifier.height(4.dp))
                     Text(rupiah(credits.sumOf { it.remaining.toLong() }), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineSmall, color = Blue)
-                    Text("${credits.size} transaksi aktif", fontSize = 12.sp, color = Muted)
                 }
-                Surface(color = PaleBlue, shape = RoundedCornerShape(12.dp)) {
-                    Icon(Icons.Default.AccountBalanceWallet, null, tint = Blue, modifier = Modifier.padding(12.dp))
-                }
+                Text("${credits.size} transaksi aktif", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Blue)
             }
         }
         SectionGap()
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Riwayat Kasbon Berjalan", fontWeight = FontWeight.Bold, fontSize = 16.sp, modifier = Modifier.weight(1f))
-            Text("${credits.size} transaksi", fontSize = 11.sp, color = Muted)
-        }
+        Text("Riwayat Kasbon", fontWeight = FontWeight.Bold, fontSize = 16.sp)
         Spacer(Modifier.height(10.dp))
         if (credits.isEmpty()) DemoNote("Belum ada kasbon yang belum lunas.")
         credits.forEach { credit ->
@@ -159,7 +160,7 @@ internal fun CreditScreen(ownerId: String, pending: PendingCredit?, onBack: () -
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(credit.customer, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Ink)
-                        Text(credit.dueAt?.let { "Jatuh tempo: ${dateText(it)}" } ?: "Tanpa batas pelunasan", fontSize = 11.sp, color = Muted)
+                        Text("Jatuh tempo: ${creditDueDateText(credit.dueAt)}", fontSize = 11.sp, color = Muted)
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text(rupiah(credit.total), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Ink)
@@ -172,7 +173,13 @@ internal fun CreditScreen(ownerId: String, pending: PendingCredit?, onBack: () -
                         val items = creditItems[credit.saleId].orEmpty()
                         if (items.isEmpty()) Text("Rincian barang tidak tersedia", fontSize = 12.sp, color = Muted)
                         items.forEach { Text("${it.productName} × ${it.quantity}", fontSize = 12.sp, color = Ink) }
-                        Text("Dibayar di awal: ${rupiah(credit.received)}", fontSize = 11.sp, color = Muted)
+                        HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Line)
+                        Text("Pembayaran awal: ${rupiah(credit.received)}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Ink)
+                        creditPayments[credit.saleId].orEmpty().forEachIndexed { index, payment ->
+                            HorizontalDivider(Modifier.padding(vertical = 8.dp), color = Line)
+                            Text("Angsuran ${index + 1}: ${rupiah(payment.amount)}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Ink)
+                            Text(dateText(payment.createdAt), fontSize = 11.sp, color = Muted)
+                        }
                     }
                 }
                 Spacer(Modifier.height(10.dp))
