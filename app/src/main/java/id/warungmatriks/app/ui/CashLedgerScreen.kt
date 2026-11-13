@@ -1,11 +1,7 @@
 package id.warungmatriks.app.ui
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.Alignment
@@ -14,7 +10,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -24,14 +19,13 @@ import id.warungmatriks.app.ui.theme.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInspectionMode
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.UUID
+
+internal fun cashHistorySelection(current: String?, selected: String): String? = if (current == selected) null else selected
 
 internal fun cashNetText(amount: Long): String = if (amount < 0) "-" + rupiah(-amount) else rupiah(amount)
 private fun cashDate(time: Long): String = SimpleDateFormat("dd MMM yyyy • HH:mm", Locale("id", "ID")).format(Date(time))
@@ -53,7 +47,7 @@ internal fun CashLedgerScreen(ownerId: String, onBack: () -> Unit) {
     var loading by remember { mutableStateOf(true) }
     var loadingMore by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var pendingDirection by rememberSaveable(ownerId) { mutableStateOf<String?>(null) }
+    var historyDirection by rememberSaveable(ownerId) { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
@@ -117,9 +111,11 @@ internal fun CashLedgerScreen(ownerId: String, onBack: () -> Unit) {
             CashSummaryCard("Kas keluar", summary?.let { rupiah(it.cashOut) } ?: "—", false, Modifier.weight(1f))
         }
         Spacer(Modifier.height(14.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { pendingDirection = "in" }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp)) { Text("Catat masuk", fontSize = 12.sp) }
-            OutlinedButton(onClick = { pendingDirection = "out" }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp)) { Text("Catat keluar", fontSize = 12.sp) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = historyDirection == "in", onClick = { historyDirection = cashHistorySelection(historyDirection, "in") },
+                modifier = Modifier.weight(1f), label = { Text("Uang masuk", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) })
+            FilterChip(selected = historyDirection == "out", onClick = { historyDirection = cashHistorySelection(historyDirection, "out") },
+                modifier = Modifier.weight(1f), label = { Text("Uang keluar", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) })
         }
         SectionGap(); GroupTitle("Riwayat kas")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -129,25 +125,24 @@ internal fun CashLedgerScreen(ownerId: String, onBack: () -> Unit) {
         if (loading) DemoNote("Memuat kas...")
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
         notice?.let { Text(it, color = Blue, fontSize = 12.sp) }
-        Spacer(Modifier.height(12.dp)); GroupTitle("Riwayat Uang Masuk")
-        DemoCard {
-            if (!loading && error == null && ins.isEmpty()) DemoNote("Belum ada catatan uang masuk.")
-            ins.forEach { CashMovementRow(it) }
-            if (moreIn) TextButton(onClick = { loadMore("in") }, enabled = !loadingMore) { Text(if (loadingMore) "Memuat..." else "Muat lebih banyak") }
+        if (historyDirection != "out") {
+            Spacer(Modifier.height(12.dp)); GroupTitle("Riwayat Uang Masuk")
+            DemoCard {
+                if (!loading && error == null && ins.isEmpty()) DemoNote("Belum ada catatan uang masuk.")
+                ins.forEach { CashMovementRow(it) }
+                if (moreIn) TextButton(onClick = { loadMore("in") }, enabled = !loadingMore) { Text(if (loadingMore) "Memuat..." else "Muat lebih banyak") }
+            }
         }
-        SectionGap()
-        Text("Riwayat Uang Keluar", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
-        Spacer(Modifier.height(10.dp))
-        DemoCard {
-            if (!loading && error == null && outs.isEmpty()) Text("Belum ada catatan uang keluar.", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontSize = 12.sp, color = Muted, lineHeight = 17.sp)
-            outs.forEach { CashMovementRow(it) }
-            if (moreOut) TextButton(onClick = { loadMore("out") }, enabled = !loadingMore) { Text(if (loadingMore) "Memuat..." else "Muat lebih banyak") }
+        if (historyDirection != "in") {
+            SectionGap()
+            Text("Riwayat Uang Keluar", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+            Spacer(Modifier.height(10.dp))
+            DemoCard {
+                if (!loading && error == null && outs.isEmpty()) Text("Belum ada catatan uang keluar.", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontSize = 12.sp, color = Muted, lineHeight = 17.sp)
+                outs.forEach { CashMovementRow(it) }
+                if (moreOut) TextButton(onClick = { loadMore("out") }, enabled = !loadingMore) { Text(if (loadingMore) "Memuat..." else "Muat lebih banyak") }
+            }
         }
-    }
-    pendingDirection?.let { direction ->
-        CashEntryDialog(direction, store, onClose = { pendingDirection = null }, onSaved = {
-            pendingDirection = null; notice = "Catatan kas tersimpan di perangkat."; week = cashWeek(); revision++
-        })
     }
 }
 
@@ -185,45 +180,6 @@ private fun CashMovementRow(movement: CashMovement) {
             Text((if (incoming) "+" else "−") + rupiah(movement.amount), fontSize = 13.sp, color = if (incoming) Blue else Danger, fontWeight = FontWeight.Bold)
         }
     }
-}
-
-@Composable
-private fun CashEntryDialog(direction: String, store: CashierStore, onClose: () -> Unit, onSaved: () -> Unit) {
-    val categories = if (direction == "in") listOf("initial", "deposit") else listOf("purchase", "withdrawal", "other")
-    var category by rememberSaveable(direction) { mutableStateOf(categories.first()) }
-    var amountText by rememberSaveable(direction) { mutableStateOf("") }
-    var note by rememberSaveable(direction) { mutableStateOf("") }
-    val id = rememberSaveable(direction) { UUID.randomUUID().toString() }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val amount = amountText.toIntOrNull()
-    val scope = rememberCoroutineScope()
-    AlertDialog(onDismissRequest = { if (!busy) onClose() }, title = { Text(if (direction == "in") "Catat uang masuk" else "Catat uang keluar") }, text = {
-        Column(Modifier.heightIn(max = 430.dp).verticalScroll(rememberScrollState())) {
-            OutlinedTextField(value = amountText, onValueChange = { amountText = it.filter { c -> c in '0'..'9' }.take(9); error = null },
-                label = { Text("Nominal tunai (Rp)") }, singleLine = true, enabled = !busy, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(10.dp)); Text("Kategori", fontSize = 12.sp, color = Muted)
-            categories.forEach { value ->
-                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    RadioButton(selected = category == value, onClick = { category = value }, enabled = !busy)
-                    Text(cashCategoryLabel(value), fontSize = 13.sp)
-                }
-            }
-            OutlinedTextField(value = note, onValueChange = { note = it.take(120) }, label = { Text("Keterangan (opsional)") }, enabled = !busy, singleLine = true, modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(8.dp))
-            DemoNote(if (direction == "in") "Catat hanya uang yang benar-benar ditambahkan. Tukar pecahan dengan nominal sama tidak perlu dicatat." else "Kas keluar boleh melebihi arus kas minggu ini; angka mingguan bisa negatif. Ini tidak menambah stok atau mencatat kulakan barang.")
-            error?.let { Spacer(Modifier.height(8.dp)); Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
-        }
-    }, confirmButton = { TextButton(enabled = !busy && amount != null && amount > 0, onClick = {
-        val value = amount ?: return@TextButton
-        busy = true; error = null
-        scope.launch {
-            try {
-                withContext(NonCancellable) { store.addManualCash(id, direction, category, value, note) }
-                onSaved()
-            } catch (e: CancellationException) { throw e } catch (_: Exception) { error = "Catatan belum dapat disimpan. Coba lagi." } finally { busy = false }
-        }
-    }) { Text(if (busy) "Menyimpan..." else "Simpan") } }, dismissButton = { TextButton(onClick = onClose, enabled = !busy) { Text("Batal") } })
 }
 
 @Preview(showBackground = true, widthDp = 360, heightDp = 800)
