@@ -101,9 +101,8 @@ internal fun ReportsScreen(ownerId: String, shopName: String) {
     DemoPage("Laporan Warung", "Ringkasan bulan ini • jam perangkat", badgeText = if (inspection) "PREVIEW" else "DATA LOKAL") {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Bulan ini", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            TextButton(onClick = { revision++ }, enabled = !busy) { Text("Muat ulang") }
+            IconButton(onClick = { revision++ }, enabled = !busy) { Icon(Icons.Default.Refresh, contentDescription = "Muat ulang laporan", tint = Blue) }
         }
-        DemoNote("Data penjualan lama yang sudah terhapus sebelum pembaruan tidak dapat dipulihkan; angka periode terdahulu mungkin tidak lengkap.")
         Spacer(Modifier.height(12.dp))
         val r = report
         if (r == null) DemoNote(if (inspection) "Preview laporan." else "Memuat data laporan...")
@@ -125,7 +124,6 @@ internal fun ReportsScreen(ownerId: String, shopName: String) {
                 InfoLine("Jumlah transaksi", r.count.toString()); Spacer(Modifier.height(8.dp))
                 InfoLine("QRIS dicatat", rupiah(r.qris))
                 if (r.missingCost > 0 || r.missingItems > 0) DemoNote("Modal atau rincian sebagian barang tidak tersedia; total modal/laba tidak ditebak.")
-                DemoNote("Nilai penjualan termasuk kasbon dan QRIS; bukan uang tunai yang sudah diterima. Laba kotor belum memperhitungkan biaya usaha.")
             }
             SectionGap(); GroupTitle("Uang tunai")
             DemoCard {
@@ -134,30 +132,28 @@ internal fun ReportsScreen(ownerId: String, shopName: String) {
                 InfoLine("Tunai dari penjualan", rupiah(r.salesCash)); Spacer(Modifier.height(8.dp))
                 InfoLine("Angsuran diterima", rupiah(r.installmentCash)); Spacer(Modifier.height(8.dp))
                 InfoLine("Modal awal / setoran", rupiah(r.deposits))
-                DemoNote("Setoran bukan penjualan. Angsuran bukan penjualan baru. Kas keluar termasuk penarikan pemilik dan kategori lain, bukan hanya kulakan.")
             }
-            Spacer(Modifier.height(8.dp)); DemoNote("Potensi stok = stok barang aktif × harga jual saat ini; bukan uang atau laba yang sudah diterima.")
-            SectionGap(); GroupTitle("Penjualan vs Kas Keluar", "Tujuh hari kalender terakhir dalam bulan ini")
+            SectionGap(); GroupTitle("Statistik Sirkulasi Uang")
             DemoCard { ReportGraph(r.days) }
-            SectionGap(); GroupTitle("Kategori Paling Cuan", "Berdasarkan perkiraan laba kotor")
+            SectionGap(); GroupTitle("Kategori Paling Cuan")
             DemoCard {
                 if (r.categories.isEmpty()) DemoNote("Belum ada kategori dengan data penjualan.")
                 r.categories.filter { it.profit != null }.sortedByDescending { it.profit }.forEach { ReportListRow(it.name, rupiah(it.profit!!)) }
                 r.categories.filter { it.profit == null }.forEach { ReportListRow(it.name, "Modal tidak lengkap") }
                 if (r.unknownCategory > 0) DemoNote("${r.unknownCategory} pcs dari transaksi lama tidak memiliki kategori historis dan tidak dimasukkan ke peringkat.")
             }
-            SectionGap(); GroupTitle("Produk Paling Laris", "Maksimal 20 barang, menurut jumlah pcs terjual")
+            SectionGap(); GroupTitle("Produk Paling Laris")
             DemoCard {
                 if (r.bestProducts.isEmpty()) DemoNote("Belum ada barang terjual.")
                 r.bestProducts.forEachIndexed { i, item -> ReportListRow("${i + 1}. ${item.name}", "${item.quantity} pcs") }
             }
-            SectionGap(); GroupTitle("Pola Jam Ramai", "Berdasarkan jumlah transaksi, bukan jumlah orang")
+            SectionGap(); GroupTitle("Pola Jam Ramai")
             DemoCard {
                 ReportListRow("Pagi – Sore • 06.00–17.59", "${r.morning} transaksi")
                 ReportListRow("Sore – Pagi • 18.00–05.59", "${r.evening} transaksi")
                 DemoNote(if (r.morning == r.evening) "Jumlah transaksi sama." else if (r.morning > r.evening) "Lebih ramai pagi–sore." else "Lebih ramai sore–pagi.")
             }
-            SectionGap(); GroupTitle("Data Stok Barang", "Semua barang terdaftar, termasuk yang nonaktif")
+            SectionGap(); GroupTitle("Data Stok Barang")
             DemoCard {
                 if (r.inventory.isEmpty()) DemoNote("Belum ada barang.")
                 r.inventory.forEach { item -> InfoLine(item.name + if (item.active) "" else " (nonaktif)", "${item.stock} pcs"); Spacer(Modifier.height(8.dp)) }
