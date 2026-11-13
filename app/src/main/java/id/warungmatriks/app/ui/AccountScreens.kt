@@ -58,8 +58,6 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
         Spacer(Modifier.height(8.dp))
         AccountMenuTile(Icons.Default.NotificationsNone, "Notifikasi", "Pengingat & aktivitas toko") { onNotifications() }
         SectionGap(); GroupTitle("Data & keuangan")
-        AccountMenuTile(Icons.Default.CloudOff, "Cadangkan & pulihkan", "Backup belum tersedia") { info = "Backup dan sinkronisasi belum tersedia." }
-        Spacer(Modifier.height(8.dp))
         AccountMenuTile(Icons.Default.FileDownload, "Ekspor laporan", "Unduh atau bagikan PDF") { onExportReport() }
         SectionGap(); GroupTitle("Bantuan & keamanan")
         AccountMenuTile(Icons.Default.SupportAgent, "Pusat bantuan", "Hubungi 0812 3580 6240") {
