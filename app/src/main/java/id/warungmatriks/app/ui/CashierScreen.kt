@@ -67,6 +67,7 @@ internal class CashierState {
     var customer by mutableStateOf("")
     var showCheckout by mutableStateOf(false)
     var showQris by mutableStateOf(false)
+    var showQrisReminder by mutableStateOf(false)
     var qrisTotal by mutableIntStateOf(0)
     var qrisLines by mutableStateOf<List<CashierLine>>(emptyList())
     var qrisSaleId by mutableStateOf("")
@@ -109,6 +110,9 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
             catch (e: CancellationException) { throw e } catch (_: Exception) { state.weeklyCash = null }
             delay(30_000)
         }
+    }
+    LaunchedEffect(state.showQrisReminder) {
+        if (state.showQrisReminder) { delay(5_000); state.showQrisReminder = false }
     }
     val products = state.catalog.filter { it.active }
     val quantities = state.quantities
@@ -282,7 +286,7 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
         Spacer(Modifier.height(24.dp))
     }
 
-    if (state.showQris) QrisDialog(total = state.qrisTotal, source = state.qrisSource, onSourceChange = { state.qrisSource = it }, onRecord = {
+    if (state.showQris) QrisDialog(total = state.qrisTotal, source = state.qrisSource, onRecord = {
         state.processing = true
         try {
             store.checkoutQris(state.qrisSaleId, state.qrisLines)
@@ -295,7 +299,12 @@ internal fun CashierScreen(state: CashierState, ownerId: String, cashierName: St
                 state.receivables.clear(); state.receivables.addAll(freshDebts)
             } catch (_: Exception) { state.ready = false; state.notice = "Penjualan QRIS tersimpan, tetapi data gagal dimuat ulang. Mulai ulang aplikasi." }
         } finally { state.processing = false }
-    }, onClose = { state.showQris = false })
+    }, onRecorded = { state.showQris = false; state.showQrisReminder = true }, onClose = { state.showQris = false })
+    if (state.showQrisReminder) AlertDialog(
+        onDismissRequest = { state.showQrisReminder = false }, title = { Text("Transaksi QRIS dicatat") },
+        text = { Text("Silakan periksa dan verifikasi pembayaran pada aplikasi penyedia QRIS.") },
+        confirmButton = { TextButton(onClick = { state.showQrisReminder = false }) { Text("Mengerti") } },
+    )
     if (state.showCheckout) {
         AlertDialog(
             onDismissRequest = { if (!state.processing) state.showCheckout = false },
