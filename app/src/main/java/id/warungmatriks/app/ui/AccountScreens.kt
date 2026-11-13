@@ -1,5 +1,7 @@
 package id.warungmatriks.app.ui
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -24,15 +26,15 @@ import id.warungmatriks.app.ui.theme.*
 import id.warungmatriks.app.auth.ShopProfile
 import id.warungmatriks.app.auth.SignedInAccount
 import id.warungmatriks.app.data.QrisSettings
-import id.warungmatriks.app.data.encodeBinaryQris
 
 @Composable
 internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, signOutBusy: Boolean, signOutError: String?, onNotifications: () -> Unit, onSaveProfile: (ShopProfile) -> Boolean = { false }) {
+    val context = LocalContext.current
     var info by remember { mutableStateOf<String?>(null) }
     var binary by remember { mutableStateOf(false) }
     var editingProfile by remember { mutableStateOf(false) }
     var confirmSignOut by remember { mutableStateOf(false) }
-    DemoPage("Akun & Pengaturan", account.shop.shopName + " • Profil di perangkat", badgeText = "LOKAL") {
+    DemoPage("Akun", subtitle = "", badgeText = "") {
         DemoCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(color = PaleBlue, shape = RoundedCornerShape(50)) { Icon(Icons.Default.Person, null, tint = Blue, modifier = Modifier.padding(14.dp).size(32.dp)) }
@@ -48,16 +50,6 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
                     if (account.email.isNotBlank()) Text(account.email, fontSize = 12.sp, color = Muted, maxLines = 1)
                 }
             }
-            Spacer(Modifier.height(12.dp))
-            Surface(color = LightSurface, shape = RoundedCornerShape(10.dp)) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("Jenis usaha", color = Muted, fontSize = 11.sp)
-                        Text(account.shop.businessType, color = Blue, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    }
-                    TextButton(onClick = { editingProfile = true }) { Text("Edit profil") }
-                }
-            }
         }
         SectionGap(); GroupTitle("Manajemen toko & kasir")
         AccountMenuTile(Icons.Default.Storefront, "Profil toko", "Ubah pemilik, nama warung & jenis usaha") { editingProfile = true }
@@ -70,7 +62,13 @@ internal fun AccountScreen(account: SignedInAccount, onSignOut: () -> Unit, sign
         Spacer(Modifier.height(8.dp))
         AccountMenuTile(Icons.Default.FileDownload, "Ekspor laporan", "PDF melalui halaman Laporan") { info = "Buka halaman Laporan untuk mengunduh atau membagikan PDF." }
         SectionGap(); GroupTitle("Bantuan & keamanan")
-        AccountMenuTile(Icons.Default.SupportAgent, "Pusat bantuan", "Layanan bantuan belum tersedia") { info = "Layanan bantuan belum tersedia." }
+        AccountMenuTile(Icons.Default.SupportAgent, "Pusat bantuan", "Hubungi melalui email") {
+            val intent = Intent(Intent.ACTION_SENDTO, Uri.fromParts("mailto", "richieakbar248@gmail.com", null))
+                .putExtra(Intent.EXTRA_SUBJECT, "Bantuan Warung Matriks")
+            try { context.startActivity(intent) } catch (_: Exception) {
+                info = "Aplikasi email tidak dapat dibuka. Hubungi richieakbar248@gmail.com."
+            }
+        }
         Spacer(Modifier.height(16.dp))
         Button(onClick = { if (!signOutBusy) confirmSignOut = true }, enabled = !signOutBusy,
             modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(12.dp),
@@ -121,7 +119,7 @@ private fun EditShopProfileDialog(profile: ShopProfile, onClose: () -> Unit, onS
     var shop by remember(profile) { mutableStateOf(profile.shopName) }
     var kind by remember(profile) { mutableStateOf(profile.businessType) }
     var saveError by remember(profile) { mutableStateOf(false) }
-    AlertDialog(onDismissRequest = onClose, title = { Text("Edit profil toko") }, text = {
+    AlertDialog(onDismissRequest = onClose, title = { Text("Edit Profil") }, text = {
         Column {
             OutlinedTextField(owner, { owner = it.take(80) }, label = { Text("Nama pemilik") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             Spacer(Modifier.height(8.dp))
@@ -133,7 +131,6 @@ private fun EditShopProfileDialog(profile: ShopProfile, onClose: () -> Unit, onS
                     FilterChip(selected = kind == value, onClick = { kind = value }, label = { Text(value, fontSize = 11.sp) })
                 }
             }
-            DemoNote("Perubahan hanya disimpan di perangkat untuk akun ini; tidak mengubah akun Google.")
             if (saveError) Text("Profil belum dapat disimpan. Coba lagi.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
         }
     }, confirmButton = { TextButton(enabled = owner.isNotBlank() && shop.isNotBlank() && kind.isNotBlank(), onClick = { saveError = !onSave(ShopProfile(owner.trim(), shop.trim(), kind)) }) { Text("Simpan") } },
@@ -166,21 +163,19 @@ private fun BinaryDialog(ownerId: String, onClose: () -> Unit, onSaved: () -> Un
                     IconButton(onClick = onClose, modifier = Modifier.size(38.dp)) { Icon(Icons.Default.Close, "Tutup", tint = Muted) }
                 }
                 HorizontalDivider(Modifier.padding(vertical = 12.dp), color = Line)
-                Text("Kode QRIS", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Ink)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Masukkan Payload QRIS", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Ink, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { if (hasSaved) confirmReset = true else { input = ""; error = null } }) {
+                        Icon(Icons.Default.RestartAlt, contentDescription = "Reset kode QRIS", tint = Blue)
+                    }
+                }
                 Spacer(Modifier.height(6.dp))
-                DemoNote("Tempel teks QRIS statis lengkap atau biner ASCII (8 angka 0/1 per karakter). Untuk biner, spasi dan baris baru boleh digunakan.")
-                Spacer(Modifier.height(10.dp))
                 OutlinedTextField(value = input, onValueChange = ::updateInput,
                     label = { Text("Kode QRIS") }, modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 220.dp), maxLines = 8,
                     shape = RoundedCornerShape(10.dp),
                     trailingIcon = { IconButton(onClick = { clipboard.getText()?.text?.let(::updateInput) }) { Icon(Icons.Default.ContentPaste, "Tempel kode QRIS") } },
                     colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = LightSurface, focusedContainerColor = LightSurface, unfocusedBorderColor = Line))
                 if (error != null) { Spacer(Modifier.height(8.dp)); Text(error!!, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Preset cepat:", fontSize = 11.sp, color = Muted)
-                    TextButton(onClick = { if (hasSaved) confirmReset = true else { input = ""; error = null } }) { Text("Reset") }
-                }
-                DemoNote("Pemeriksaan format dan CRC tidak memverifikasi identitas penerima atau pembayaran. Data disimpan lokal, terpisah per akun.")
                 Spacer(Modifier.height(12.dp))
                 Button(enabled = input.isNotBlank(), modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(10.dp), onClick = {
                     try {

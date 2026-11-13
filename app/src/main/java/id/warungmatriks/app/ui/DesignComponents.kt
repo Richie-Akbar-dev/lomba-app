@@ -29,9 +29,9 @@ internal fun DemoPage(title: String, subtitle: String = "Warung Matriks • Data
             }
             Column(Modifier.weight(1f)) {
                 Text(title, fontSize = 21.sp, fontWeight = FontWeight.Bold, color = Ink)
-                Text(subtitle, fontSize = 12.sp, color = Muted)
+                if (subtitle.isNotBlank()) Text(subtitle, fontSize = 12.sp, color = Muted)
             }
-            Surface(color = PaleBlue, shape = RoundedCornerShape(50)) {
+            if (badgeText.isNotBlank()) Surface(color = PaleBlue, shape = RoundedCornerShape(50)) {
                 Text(badgeText, Modifier.padding(horizontal = 9.dp, vertical = 5.dp), fontSize = 10.sp, color = Blue, fontWeight = FontWeight.Bold)
             }
         }
