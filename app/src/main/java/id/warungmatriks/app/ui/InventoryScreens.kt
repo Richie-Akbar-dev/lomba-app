@@ -309,16 +309,12 @@ internal fun AddProductScreen(ownerId: String, productId: String? = null, onBack
         }
     }
 
-    DemoPage(if (productId == null) "Tambah Barang" else "Edit Barang", "Data disimpan di perangkat", onBack, badgeText = "DATA LOKAL") {
+    DemoPage(if (productId == null) "Tambah Barang" else "Edit Barang", subtitle = "", onBack = onBack, badgeText = "") {
         DemoCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ProductPhoto(previewProduct, Modifier.size(80.dp).clip(RoundedCornerShape(12.dp)).background(LightSurface))
                 Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text("Foto Produk", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                    Spacer(Modifier.height(4.dp))
-                    DemoNote("Opsional • membantu mengenali barang saat memilih di kasir.")
-                }
+                Text("Foto Produk (opsional)", fontWeight = FontWeight.Bold, fontSize = 15.sp, modifier = Modifier.weight(1f))
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -352,9 +348,9 @@ internal fun AddProductScreen(ownerId: String, productId: String? = null, onBack
             Spacer(Modifier.height(12.dp))
             Surface(color = LightSurface, shape = RoundedCornerShape(10.dp)) {
                 Column(Modifier.fillMaxWidth().padding(12.dp)) {
-                    Text("Estimasi laba kotor", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Ink)
+                    Text("Laba kotor", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Ink)
                     Spacer(Modifier.height(4.dp))
-                    Text(if (cost != null && price != null) "${rupiah(price - cost)} / pcs" else "Belum diketahui jika modal belum diisi.", color = Blue, fontSize = 12.sp)
+                    Text(if (cost != null && price != null) "${rupiah(price - cost)} / pcs" else "—", color = Blue, fontSize = 12.sp)
                     if (cost != null && price != null && price < cost) Text("Harga jual lebih rendah daripada modal.", color = Danger, fontSize = 12.sp)
                 }
             }
@@ -364,14 +360,13 @@ internal fun AddProductScreen(ownerId: String, productId: String? = null, onBack
             if (productId == null) FormField("Stok awal (pcs)", stock, { stock = it.filter { c -> c in '0'..'9' }.take(8) }, "0", true)
             else Text("Stok saat ini: $stock pcs • penambahan stok melalui daftar Barang.", fontSize = 12.sp, color = Muted)
             Spacer(Modifier.height(10.dp)); FormField("Batas stok minimum (pcs)", minimum, { minimum = it.filter { c -> c in '0'..'9' }.take(8) }, "0", true)
-            Spacer(Modifier.height(10.dp)); DemoNote(if (productId == null) "Stok awal tidak otomatis dicatat sebagai kulakan atau kas keluar." else "Edit harga tidak mengubah penjualan sebelumnya.")
+            if (productId != null) { Spacer(Modifier.height(10.dp)); DemoNote("Edit harga tidak mengubah penjualan sebelumnya.") }
         }
         SectionGap()
         message?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp); Spacer(Modifier.height(8.dp)) }
         Button(onClick = { save(false) }, enabled = valid && !busy, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(12.dp)) { Text(if (busy) "Memproses..." else if (productId == null) "Simpan & Tampilkan di Kasir" else "Simpan Perubahan") }
         Spacer(Modifier.height(8.dp))
         if (productId == null) OutlinedButton(onClick = { save(true) }, enabled = valid && !busy, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(12.dp)) { Text("Simpan & Tambah Barang Lagi") }
-        Spacer(Modifier.height(8.dp)); DemoNote("Data hanya tersimpan di perangkat. Backup belum tersedia.")
     }
     if (saved) AlertDialog(onDismissRequest = {}, title = { Text("Berhasil disimpan") }, text = { Text("Barang tersimpan di perangkat.") }, confirmButton = {})
 }
