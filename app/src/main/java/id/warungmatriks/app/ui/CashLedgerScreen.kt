@@ -15,6 +15,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -96,25 +97,19 @@ internal fun CashLedgerScreen(ownerId: String, onBack: () -> Unit) {
         }
     }
 
-    DemoPage("Kas masuk & keluar", "Sirkulasi tunai mingguan", onBack, badgeText = if (inspection) "PREVIEW" else "DATA LOKAL") {
+    DemoPage("Sirkulasi Kas", subtitle = "", onBack = onBack, badgeText = "") {
         DemoCard {
-            Text("Kas Laci Kasir", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ink)
+            Text("Kas Saat Ini", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ink)
             Spacer(Modifier.height(12.dp))
             Surface(color = LightSurface, shape = RoundedCornerShape(12.dp)) {
                 Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Surface(color = PaleBlue, shape = RoundedCornerShape(10.dp)) {
                         Icon(Icons.Default.AccountBalanceWallet, contentDescription = null, tint = Blue, modifier = Modifier.padding(10.dp))
                     }
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("ARUS KAS MINGGU INI", color = Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                        Text("Sejak ${cashDate(week.start)}", color = Muted, fontSize = 10.sp)
-                    }
+                    Spacer(Modifier.weight(1f))
                     Text(summary?.let { cashNetText(it.net) } ?: "—", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Blue)
                 }
             }
-            Spacer(Modifier.height(8.dp))
-            DemoNote("Dimulai dari Rp0 setiap Senin. Ini selisih arus kas minggu ini, bukan saldo uang fisik di laci; dapat bernilai negatif.")
         }
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -126,11 +121,10 @@ internal fun CashLedgerScreen(ownerId: String, onBack: () -> Unit) {
             Button(onClick = { pendingDirection = "in" }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp)) { Text("Catat masuk", fontSize = 12.sp) }
             OutlinedButton(onClick = { pendingDirection = "out" }, modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 4.dp)) { Text("Catat keluar", fontSize = 12.sp) }
         }
-        Spacer(Modifier.height(8.dp)); DemoNote("Penukaran uang besar dan kecil tidak mengubah jumlah kas, jadi tidak perlu dicatat sebagai masuk atau keluar.")
-        SectionGap(); GroupTitle("Riwayat kas", "Ringkasan di atas selalu untuk minggu berjalan.")
+        SectionGap(); GroupTitle("Riwayat kas")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("Minggu ini", "Semua riwayat").forEach { label -> FilterChip(selected = period == label, onClick = { period = label }, label = { Text(label, fontSize = 12.sp) }) }
-            TextButton(onClick = { week = cashWeek(); revision++ }) { Text("Muat ulang", fontSize = 12.sp) }
+            IconButton(onClick = { week = cashWeek(); revision++ }) { Icon(Icons.Default.Refresh, contentDescription = "Muat ulang kas", tint = Blue) }
         }
         if (loading) DemoNote("Memuat kas...")
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 12.sp) }
@@ -141,13 +135,14 @@ internal fun CashLedgerScreen(ownerId: String, onBack: () -> Unit) {
             ins.forEach { CashMovementRow(it) }
             if (moreIn) TextButton(onClick = { loadMore("in") }, enabled = !loadingMore) { Text(if (loadingMore) "Memuat..." else "Muat lebih banyak") }
         }
-        SectionGap(); GroupTitle("Riwayat Uang Keluar")
+        SectionGap()
+        Text("Riwayat Uang Keluar", fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Ink, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+        Spacer(Modifier.height(10.dp))
         DemoCard {
-            if (!loading && error == null && outs.isEmpty()) DemoNote("Belum ada catatan uang keluar.")
+            if (!loading && error == null && outs.isEmpty()) Text("Belum ada catatan uang keluar.", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, fontSize = 12.sp, color = Muted, lineHeight = 17.sp)
             outs.forEach { CashMovementRow(it) }
             if (moreOut) TextButton(onClick = { loadMore("out") }, enabled = !loadingMore) { Text(if (loadingMore) "Memuat..." else "Muat lebih banyak") }
         }
-        SectionGap(); DemoNote("QRIS disimpan terpisah dan tidak masuk kas tunai. Catatan lama tanpa tanggal tidak dihitung dalam minggu tertentu. Kas tersimpan lokal; backup belum tersedia.")
     }
     pendingDirection?.let { direction ->
         CashEntryDialog(direction, store, onClose = { pendingDirection = null }, onSaved = {
